@@ -212,6 +212,7 @@ export function winProb(g) {
 function scoreRuns(g, runners, batter, { rbi = true } = {}) {
   const bat = battingTeam(g), pit = fieldingTeam(g).pitcher, n = runners.length;
   if (!n) return;
+  (g.scoredNow ||= []).push(...runners.map((r) => r.uid));
   bat.runs += n;
   bat.inningRuns[g.inning - 1] = (bat.inningRuns[g.inning - 1] || 0) + n;
   pit.stats.r += n; pit.stintRuns = (pit.stintRuns || 0) + n;
@@ -255,6 +256,7 @@ function resolveHit(g, kind, batter, running) {
 function resolveOutInPlay(g, batter, def, running) {
   const { rng } = g, [b1, b2, b3] = g.bases;
   const ground = rng() < 0.55 - (batter.power - 50) / 400;
+  g.lastGround = ground;
   batter.stats.ab++;
   const runs = [];
   let rbi = true;
@@ -381,6 +383,17 @@ function pitchKind(g, B, P, off, def, pit) {
   return { kind: 'inplay', inZone, t, P };
 }
 
+// Where a ball in play goes: zone -1 (left-field line) .. +1 (right-field line), depth 0 (infield) .. >1 (over the fence).
+function bipMeta(g, res, batter) {
+  const r = (c) => hrand(g.seed, g.paCount * 131 + g.inning, 500 + c);
+  const pull = batter.hand === 'L' ? 0.22 : batter.hand === 'R' ? -0.22 : 0;
+  const zone = Math.max(-1, Math.min(1, (r(1) * 2 - 1) * 0.8 + pull));
+  const depthR = r(2), line = r(3) < 0.4;
+  const t = res === 'HR' ? 'FB' : res === '1B' ? (line ? 'LD' : 'GB') : res === 'OUT' ? 'GB' : 'LD';
+  const depth = { HR: 1.12, '3B': 0.97, '2B': 0.85, '1B': line ? 0.62 : 0.5 }[res] ?? 0.4;
+  return { t, zone: +zone.toFixed(2), depth: +(depth + (res === 'HR' ? 0.08 : (depthR - 0.5) * 0.12)).toFixed(2), r: depthR, line };
+}
+
 function closePA(g, ev, result) {
   const bat = battingTeam(g);
   ev.result = result;
@@ -429,10 +442,10 @@ export function pitch(g, orders = {}) {
   const def = { approach: 'normal', depth: 'normal', ...(orders.def || {}) };
   const bat = battingTeam(g), pit = fieldingTeam(g).pitcher, batter = bat.lineup[bat.batIdx];
   const rng = g.rng, pa = g.pa, r0 = bat.runs;
-  const ev = { kind: null, result: null, runs: 0, steal: null };
-  g.last = ev;
+  const ev = { kind: null, result: null, runs: 0, steal: null, bip: null, scored: [] };
+  g.last = ev; g.scoredNow = []; g.lastDef = def;
   const finish = () => {
-    ev.runs = bat.runs - r0;
+    ev.runs = bat.runs - r0; ev.scored = g.scoredNow.slice();
     if (g.pa.pitches === 0) { g.wp.push(Math.round(winProb(g) * 1000) / 1000); if (g.wp.length > 140) g.wp.shift(); }
     return ev;
   };
@@ -468,6 +481,7 @@ export function pitch(g, orders = {}) {
     else {
       pa.seq.push('X');
       ev.pitch = pitchMeta(g, pit, { kind: 'inplay', inZone: true }, pa.pitches); pa.locs.push(ev.pitch);
+      ev.bip = { t: 'GB', zone: +((hrand(g.seed, g.paCount, 77) * 2 - 1) * 0.5).toFixed(2), depth: 0.12, r: 0.5, line: false };
       bunt(g, batter);
       closePA(g, ev, 'BUNT');
       ev.kind = 'inplay';
@@ -540,7 +554,8 @@ export function pitch(g, orders = {}) {
       pa.seq.push('X');
       const before = g.outs, running = !!runner;
       const res = sample(rng, ballInPlayWeights(B, k.P || P, off, def, k.inZone, k.t && k.t.cat));
-      if (res === 'OUT') { resolveOutInPlay(g, batter, def, running); creditOuts(g, before); closePA(g, ev, 'OUT'); }
+      ev.bip = bipMeta(g, res, batter);
+      if (res === 'OUT') { resolveOutInPlay(g, batter, def, running); ev.bip.t = g.lastGround ? 'GB' : (ev.bip.line ? 'LD' : 'FB'); ev.bip.depth = ev.bip.t === 'GB' ? 0.3 + 0.25 * ev.bip.r : ev.bip.t === 'LD' ? 0.55 + 0.2 * ev.bip.r : 0.65 + 0.3 * ev.bip.r; creditOuts(g, before); closePA(g, ev, 'OUT'); }
       else {
         const n = resolveHit(g, res, batter, running);
         const label = { '1B': 'singles', '2B': 'doubles', '3B': 'triples', HR: 'homers' }[res];

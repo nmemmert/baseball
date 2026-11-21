@@ -9,6 +9,13 @@ Installable as an iPhone/Android PWA (works offline).
 - **Bullpen roles:** closer (9th, 1–3 run leads), setup man (8th), long man, middle relief. The opposing AI follows them.
 - **Gameday-style screen:** scorebug, strike-zone pitch tracker (type, speed, location), diamond with count, pitcher-vs-batter strip, win-probability graph, hot/cold and platoon tags, replay of the last at-bat, box score, player cards.
 
+## Visuals, coach & learning
+- **Field cam:** an animated top-down field. Every pitch flies in from the mound; hits, ground balls, fly balls and home runs travel to where they land; fielders chase; runners round the bases; labels pop up (STRIKE, SINGLE, HOME RUN!, CAUGHT STEALING). Your shift, outfield depth and infield-in orders visibly move the fielders. Animations can be Full / Quick / Off.
+- **Coach:** a card suggests up to three moves for the situation (steal, bunt, pinch hit, bring in the closer, pitch mix, shift…) with the reason. Tap **Do it**, or follow the ★ markers in your orders. The Season tab has a **manager's to-do** list (hurt starters, tired arms, off-season upgrades).
+- **Title screen & intro:** a title screen with Continue / Exhibition / Daily / Tutorial / How to play, and a first-run intro where you name your club.
+- **Tutorial:** a hands-on practice game that walks you through pitching, orders, steals, the coach, the bench, auto mode, defense and the bullpen — each step waits for you to do the thing.
+- **How to play:** a full written guide (screen legend, every order, ratings, auto mode, season, strategy tips, FAQ) from the title screen or More.
+
 ## Auto mode
 - **▶ Auto** lets the AI manage your team while you watch (Slow / Normal / Fast / Instant).
 - It **pauses at decision points** you choose: tired pitcher, scoring chances, late & close, bases loaded.
@@ -35,5 +42,5 @@ No dependencies, no build step. To install on iPhone, host it over HTTPS (this r
 ## Layout
 - `src/engine.js` — seeded, serialisable pitch-by-pitch simulation, AI managers, win probability, auto-mode stop rules, save/load.
 - `src/league.js` — season, schedule, standings, playoffs, injuries, rest, progression, payroll, free agents, trades, history, leaders.
-- `src/main.js` — UI. `src/feedback.js` — sound + haptics. `src/store.js` — localStorage.
+- `src/main.js` — UI. `src/cam.js` — animated field cam. `src/coach.js` — suggestions and to-do. `src/screens.js` — title, intro, guide, tutorial script. `src/feedback.js` — sound + haptics. `src/store.js` — localStorage.
 - `sw.js` + `manifest.webmanifest` — PWA. Bump `VERSION` in `sw.js` if you change the shell file list.

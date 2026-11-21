@@ -129,3 +129,50 @@ test('pitch mix order changes outcomes without breaking the game', () => {
   for (let i = 0; i < 200 && !g.over; i++) pitch(g, { off: {}, def: { mix: i % 2 ? 'fb' : 'off' } });
   assert.ok(g.paCount > 20);
 });
+
+import { advise, stars, todo } from '../src/coach.js';
+import { createLeague as mkLeague } from '../src/league.js';
+import { aiPitch as ap } from '../src/engine.js';
+
+test('pitches report ball-in-play flight and who scored', () => {
+  let bips = 0, scored = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    const g = newGame(seed);
+    for (let i = 0; i < 400 && !g.over; i++) {
+      ap(g, [g.home, g.away]);
+      const e = g.last;
+      if (e.bip) { bips++; assert.ok(['GB', 'FB', 'LD'].includes(e.bip.t)); assert.ok(e.bip.zone >= -1 && e.bip.zone <= 1); assert.ok(e.bip.depth > 0); }
+      if (e.runs) { scored++; assert.equal(e.scored.length, e.runs); }
+    }
+  }
+  assert.ok(bips > 500 && scored > 50);
+});
+
+test('coach recommends sensible moves and never crashes', () => {
+  const g = newGame(44);
+  const fld = fieldingTeam(g);
+  fld.pitcher.stats.pitches = 150;   // gassed starter
+  const s = advise(g, fld, {});
+  assert.equal(s[0].key, 'pitch');
+  assert.equal(s[0].apply.sub, 'pitch');
+  assert.ok(Object.keys(stars(advise(g, fld, {}))).length >= 0);
+  // a fast runner on first suggests a steal for the batting side
+  const bat = battingTeam(g);
+  const r = bat.lineup[7]; r.speed = 90; g.bases = [r, null, null]; g.outs = 0;
+  assert.ok(advise(g, bat, {}).some((x) => x.key === 'steal'));
+  // many random states: advice is always well-formed
+  for (let seed = 1; seed <= 40; seed++) {
+    const gg = newGame(seed);
+    for (let i = 0; i < 150 && !gg.over; i++) {
+      ap(gg, [gg.home, gg.away]);
+      for (const t of [gg.home, gg.away]) for (const x of advise(gg, t, {})) { assert.ok(x.title && x.why && x.apply); }
+    }
+  }
+});
+
+test('season to-do list flags a hurt starter', () => {
+  const lg = mkLeague(3);
+  const me = lg.teams[0];
+  me.batters[0].inj = 6;
+  assert.ok(todo(lg).some((t) => /hurt/.test(t.text)));
+});

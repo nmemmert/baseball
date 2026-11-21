@@ -5,13 +5,16 @@ import {
 } from './engine.js';
 import * as L from './league.js';
 import { saveRaw, loadRaw, clearSave } from './store.js';
+import { advise, stars, todo } from './coach.js';
+import { createCam } from './cam.js';
+import { introHtml, startHtml, guideHtml, TUTORIAL } from './screens.js';
 import { fx, react, prefs, initHaptics } from './feedback.js';
 
 const DEFAULTS = {
-  sound: true, haptics: true, level: 1, theme: 'auto', text: 0, cvd: false, speed: 'normal', autoNext: false, autoLineup: false, seenTips: false,
+  sound: true, haptics: true, level: 1, theme: 'auto', text: 0, cvd: false, speed: 'normal', autoNext: false, autoLineup: false, seenTips: true, visuals: 'full', coach: true, introSeen: false, tutDone: false,
   pause: { tired: true, scoring: true, late: true, loaded: false },
 };
-const app = { settings: structuredClone(DEFAULTS), tab: 'game', lg: null, g: null, kind: null, daily: {}, auto: false, skipTok: -1, off: null };
+const app = { settings: structuredClone(DEFAULTS), tab: 'game', lg: null, g: null, kind: null, daily: {}, auto: false, skipTok: -1, off: null, screen: null, prevScreen: null, introStep: 0, tut: null, sugg: [], snap: null, savedG: null, savedKind: null };
 const ui = {
   swing: 'normal', approach: 'normal', call: '', shift: false, infieldIn: false, depth: 'normal', mix: 'mix', sub: 'field', sel: null,
   pauseMsg: '', replayN: null, tradeTeam: 1, tradeKind: 'bat', tMine: null, tTheirs: null,
@@ -20,7 +23,10 @@ const $ = (id) => document.getElementById(id);
 let autoTimer = null;
 
 // ---------- persistence & preferences ----------
-function persist() { saveRaw(pack({ lg: app.lg, g: app.g, kind: app.kind, settings: app.settings, daily: app.daily })); }
+function persist() {
+  const tut = app.kind === 'tutorial';
+  saveRaw(pack({ lg: app.lg, g: tut ? app.savedG : app.g, kind: tut ? app.savedKind : app.kind, settings: app.settings, daily: app.daily }));
+}
 function applyPrefs() {
   const s = app.settings, el = document.documentElement;
   prefs.sound = s.sound; prefs.haptics = s.haptics;
@@ -41,16 +47,18 @@ function boot() {
   }
   if (!app.lg) app.lg = L.createLeague();
   applyPrefs();
+  app.screen = app.settings.introSeen ? 'start' : 'intro';
+  if (app.g) cam.update(app.g);
   const m = /seed=(\d+)/.exec(location.hash);
   if (m) {
-    if (!app.g || app.g.over || app.kind === 'exhibit') startExhibition(Number(m[1]));
+    if (!app.g || app.g.over || app.kind === 'exhibit') { app.settings.introSeen = true; startExhibition(Number(m[1])); }
     else toast('Finish your current season game to open the shared game.');
     history.replaceState(null, '', location.pathname);
   }
 }
 
 // ---------- helpers ----------
-const mine = () => (app.kind === 'season' && app.g ? L.userTeam(app.lg) : app.kind === 'exhibit' && app.g ? app.g.home : L.userTeam(app.lg));
+const mine = () => (app.kind === 'season' && app.g ? L.userTeam(app.lg) : app.kind === 'exhibit' && app.g ? app.g.home : app.kind === 'tutorial' && app.g ? app.g.away : L.userTeam(app.lg));
 const opp = () => (app.g.home === mine() ? app.g.away : app.g.home);
 const userBats = () => battingTeam(app.g) === mine();
 const abbr = (t) => t.nick.slice(0, 3).toUpperCase();
@@ -65,6 +73,8 @@ const teamCol = (t) => `hsl(${hue(t.nick)} 62% 46%)`;
 const initials = (n) => n.split(' ').map((x) => x[0]).join('').slice(0, 2);
 const avatar = (p, t) => `<span class="av" style="background:${teamCol(t)}">${initials(p.name)}</span>`;
 const todayKey = (d = new Date()) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+
+const cam = createCam({ teamCol });
 
 function findPlayer(uid) {
   const teams = [...app.lg.teams];
@@ -104,16 +114,17 @@ function startSeasonGame() {
   if (!ng) return;
   if (app.settings.autoLineup) L.autoLineup(L.userTeam(app.lg));
   app.g = startGame(ng.home, ng.away, { seed: Math.floor(Math.random() * 2 ** 31), level: app.settings.level, user: L.userTeam(app.lg) });
-  app.kind = 'season'; resetCalls(); app.tab = 'game';
+  app.kind = 'season'; resetCalls(); app.tab = 'game'; app.screen = null; cam.update(app.g);
   app.g.log.push(`${ng.label}: ${ng.away.name} at ${ng.home.name}. Play ball!`);
   persist(); render();
 }
 function startExhibition(seed, daily = false) {
+  if (app.kind === 'tutorial') exitTutorial(false, true);
   if (app.g && !app.g.over && app.kind === 'season' && !confirm('Abandon your current season game?')) return;
-  setAuto(false, true);
+  setAuto(false, true); app.screen = null;
   const s = seed || Math.floor(100000 + Math.random() * 899999);
   app.g = newGame(s, daily ? 2 : app.settings.level); app.g.user = app.g.home; app.g.daily = daily; app.kind = 'exhibit';
-  resetCalls(); app.tab = 'game';
+  resetCalls(); app.tab = 'game'; cam.update(app.g);
   app.g.log.push(daily ? `Daily challenge ${s}. You manage ${app.g.home.name} against an All-Star manager. Play ball!` : `Exhibition #${s}. You manage ${app.g.home.name}. Play ball!`);
   persist(); render();
 }
@@ -137,6 +148,7 @@ function callOk(call) {
 
 function doPitch(oneShots = true) {
   const g = app.g;
+  cam.cancel(g);
   aiPrePA(g, [opp()]);
   if (!callOk(ui.call)) ui.call = '';
   const c = oneShots ? ui.call : '';
@@ -146,15 +158,28 @@ function doPitch(oneShots = true) {
     def: bats ? aiDefense(g, levelFor(g, fieldingTeam(g))) : { approach: ui.approach, ibb: c === 'ibb', pitchout: c === 'pitchout', infieldIn: ui.infieldIn && !!g.bases[2], shift: ui.shift, depth: ui.depth, mix: ui.mix },
   };
   const mark = g.log.length, half = g.half;
+  app.snap = { bases: [...g.bases], batter: currentBatter(g), half: g.half, inning: g.inning };
   const ev = pitch(g, orders);
   g.mark = mark;
+  if (app.tut) { app.tut.pitches++; app.tut.stepPitches++; if (g.last && g.last.steal) app.tut.stolen = true; }
   ui.call = ''; ui.pauseMsg = ''; ui.replayN = null;
   if (g.pa.pitches === 0) { ui.swing = 'normal'; ui.approach = 'normal'; ui.mix = 'mix'; }
   if (g.half !== half) ui.infieldIn = false;
   return ev;
 }
 
-function afterPlay(ev) {
+function camMode() {
+  const v = app.settings.visuals, sp = app.settings.speed;
+  if (v === 'off') return 'off';
+  if (app.auto) return sp === 'instant' ? 'off' : sp === 'fast' ? 'quick' : v;
+  return v;
+}
+function playCam(ev) {
+  if (!app.g || !ev || !app.snap) return Promise.resolve();
+  return cam.play(ev, app.snap, app.g, { mode: camMode() });
+}
+
+function afterPlay(ev, quiet = false) {
   const g = app.g;
   if (ev) react(ev);
   if (g.over) {
@@ -162,6 +187,8 @@ function afterPlay(ev) {
     setTimeout(won ? fx.win : fx.lose, 350);
   }
   persist(); render();
+  if (!ev || quiet) cam.update(g); else playCam(ev);
+  tutCheck();
 }
 
 function throwPitch() { if (app.g && !app.g.over && !app.auto) afterPlay(doPitch(true)); }
@@ -169,7 +196,7 @@ function autoAtBat() {
   const g = app.g; if (!g || g.over || app.auto) return;
   let ev, n = 0;
   do { ev = doPitch(n === 0); n++; } while (!g.over && g.pa.pitches > 0 && n < 30);
-  afterPlay(ev);
+  afterPlay(ev, true);
 }
 function autopilot(kind) {
   const g = app.g; if (!g || g.over || app.auto) return;
@@ -181,7 +208,7 @@ function autopilot(kind) {
 }
 
 // ---------- auto mode ----------
-const DELAY = { slow: 1100, normal: 550, fast: 180 };
+const DELAY = { slow: 450, normal: 220, fast: 60 };
 function setAuto(on, quiet = false) {
   clearTimeout(autoTimer);
   app.auto = !!on;
@@ -190,7 +217,9 @@ function setAuto(on, quiet = false) {
   if (!g || g.over) { app.auto = false; return; }
   app.skipTok = g.pa.pitches === 0 ? g.paCount : -1;
   ui.pauseMsg = ''; ui.replayN = null;
+  if (app.tut) app.tut.autoUsed = true;
   autoTick(false);
+  tutCheck();
 }
 function pauseAuto(reason) {
   clearTimeout(autoTimer);
@@ -212,19 +241,21 @@ function autoTick(force) {
       if (r) { pauseAuto(r); return; }
     }
     if (n === 0) g.mark = g.log.length;
+    app.snap = { bases: [...g.bases], batter: currentBatter(g), half: g.half, inning: g.inning };
+    cam.cancel(g);
     ev = aiPitch(g, [mine(), opp()]);
     n++;
   } while (instant && n < 4000);
   ui.call = '';
-  if (g.over) { afterAuto(ev); return; }
+  if (g.over) { afterAuto(ev, instant); return; }
   if (!instant) react(ev);
-  persist(); render();
-  if (!instant) autoTimer = setTimeout(() => autoTick(false), DELAY[app.settings.speed] || 550);
-  else if (!force) autoTimer = setTimeout(() => autoTick(false), 0);
+  persist(); render(); tutCheck();
+  if (!instant) playCam(ev).then(() => { if (app.auto) autoTimer = setTimeout(() => autoTick(false), DELAY[app.settings.speed] || 250); });
+  else { cam.update(g); if (!force) autoTimer = setTimeout(() => autoTick(false), 0); }
 }
-function afterAuto(ev) {
+function afterAuto(ev, quiet = false) {
   app.auto = false; clearTimeout(autoTimer);
-  afterPlay(ev);
+  afterPlay(ev, quiet);
   if (app.kind === 'season' && app.settings.autoNext) {
     setTimeout(() => {
       finishGame();
@@ -236,6 +267,7 @@ function afterAuto(ev) {
 function finishGame() {
   const g = app.g;
   if (!g || !g.over) return;
+  if (app.kind === 'tutorial') { exitTutorial(true); return; }
   setAuto(false, true);
   const you = mine() === g.home ? g.home.runs : g.away.runs, them = mine() === g.home ? g.away.runs : g.home.runs;
   if (app.kind === 'season') {
@@ -293,16 +325,6 @@ function lineScore() {
   return `<div class="scroll"><table><tr><th></th>${head}<th>R</th><th>H</th></tr>${row(g.away, true)}${row(g.home, false)}</table></div>`;
 }
 
-function diamondSvg() {
-  const g = app.g;
-  const base = (i, x, y) => `<rect class="g-base ${g.bases[i] ? 'on' : ''}" x="${x - 11}" y="${y - 11}" width="22" height="22" rx="2" transform="rotate(45 ${x} ${y})"/>`;
-  const nm = g.bases.map((r) => (r ? r.name.split(' ').slice(-1)[0] : ''));
-  const t = (x, y, s) => `<text class="g-lbl" x="${x}" y="${y}" text-anchor="middle">${s}</text>`;
-  return `<svg viewBox="0 0 200 170" role="img" aria-label="Runners on base"><path class="g-grass" d="M100 150 L25 80 L100 10 L175 80 Z"/>
-    <path class="g-line" d="M100 150 L25 80 M100 150 L175 80"/>${base(0, 150, 80)}${base(1, 100, 38)}${base(2, 50, 80)}
-    <path class="g-plate" d="M100 160 l-9 -8 l0 -7 l18 0 l0 7 z"/>${t(150, 104, nm[0])}${t(100, 20, nm[1])}${t(50, 104, nm[2])}</svg>`;
-}
-
 function trackerSvg(locs, faded) {
   const X = (x) => Math.max(14, Math.min(186, 100 + x * 50)), Y = (y) => Math.max(14, Math.min(214, 112 - y * 50));
   const dotsSvg = locs.map((l, i) => {
@@ -334,9 +356,8 @@ function nowCard() {
   const lastLine = [...g.log].reverse().find((l) => !l.startsWith('—')) || '';
   const lp = lastLine && !replay ? `<div class="lastplay ${g.last && g.last.runs ? 'run' : ''}">${lastLine}</div>` : '';
   const head = replay ? `<small>Replay: ${g.lastPA.batter}</small>` : faded && g.lastPA ? `<div class="row" style="justify-content:space-between;margin-top:0"><small>Last at-bat: ${g.lastPA.batter}</small><button class="sm" data-act="replay">↻ Replay</button></div>` : '';
-  return `${head}<div class="now"><div>${trackerSvg(locs, faded)}</div>
-    <div>${diamondSvg()}<div class="countcol"><div>B${dotsRow(g.pa.balls, 3, 'b')}</div><div>S${dotsRow(g.pa.strikes, 2, 's')}</div><div>O${dotsRow(g.outs, 2, 'o')}</div></div></div></div>
-    <div class="pitches">${rows}</div>${lp}`;
+  return `${head}<div class="camwrap"><div id="camslot"></div><div class="camcount"><div>B${dotsRow(g.pa.balls, 3, 'b')}</div><div>S${dotsRow(g.pa.strikes, 2, 's')}</div><div>O${dotsRow(g.outs, 2, 'o')}</div></div></div>
+    <div class="now2"><div class="zonebox">${trackerSvg(locs, faded)}</div><div><div class="pitches">${rows}</div>${lp}</div></div>`;
 }
 
 function arsenalHtml(p) {
@@ -358,7 +379,7 @@ function wpCard() {
   return `<div class="row" style="justify-content:space-between;margin-top:0"><h2 style="margin:0">Win probability</h2><b style="font-size:1.25rem;color:var(--${wp >= 0.5 ? 'green' : 'strike'})">${Math.round(wp * 100)}%</b></div>${sparkline()}`;
 }
 
-const seg = (name, cur, opts, dis = {}) => `<div class="seg">${opts.map(([v, t]) => `<label><input type="radio" name="${name}" value="${v}" ${cur === v ? 'checked' : ''} ${dis[v] ? 'disabled' : ''} data-set="${name}"><span>${t}</span></label>`).join('')}</div>`;
+const seg = (name, cur, opts, dis = {}, star) => `<div class="seg">${opts.map(([v, t]) => `<label><input type="radio" name="${name}" value="${v}" ${cur === v ? 'checked' : ''} ${dis[v] ? 'disabled' : ''} data-set="${name}"><span>${t}${star === v ? ' ★' : ''}</span></label>`).join('')}</div>`;
 const chk = (name, on, text, dis) => `<label class="chk"><input type="checkbox" data-toggle="${name}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${text}</label>`;
 const HINTS = {
   '': '', take: 'Take: the batter lets the next pitch go by (unless it is strike three).',
@@ -370,7 +391,7 @@ const HINTS = {
 };
 
 function ordersPanel() {
-  const g = app.g, [, , b3] = g.bases;
+  const g = app.g, [, , b3] = g.bases, st = stars(app.sugg || []);
   if (g.over) {
     const won = (g.winner === 'home') === (g.home === mine());
     return `<div class="banner">${won ? 'Victory!' : 'Defeat.'}<br>${g.away.name} ${g.away.runs}, ${g.home.name} ${g.home.runs}</div>
@@ -387,18 +408,18 @@ function ordersPanel() {
   if (userBats()) {
     const dis = { steal: !callOk('steal'), bunt: !callOk('bunt'), hitrun: !callOk('hitrun') };
     body = `<h2>Offense — your orders</h2>
-      <div class="group"><span class="label">Batter's approach</span>${seg('swing', ui.swing, [['patient', 'Work the count'], ['normal', 'Normal'], ['aggressive', 'Swing away']])}</div>
-      <div class="group"><span class="label">Play call (this pitch)</span>${seg('call', ui.call, [['', 'None'], ['take', 'Take'], ['steal', 'Steal'], ['bunt', 'Bunt'], ['hitrun', 'Hit & run']], dis)}<div class="hint">${HINTS[ui.call]}</div></div>`;
+      <div class="group"><span class="label">Batter's approach</span>${seg('swing', ui.swing, [['patient', 'Work the count'], ['normal', 'Normal'], ['aggressive', 'Swing away']], {}, st.swing)}</div>
+      <div class="group"><span class="label">Play call (this pitch)</span>${seg('call', ui.call, [['', 'None'], ['take', 'Take'], ['steal', 'Steal'], ['bunt', 'Bunt'], ['hitrun', 'Hit & run']], dis, st.call)}<div class="hint">${HINTS[ui.call]}</div></div>`;
   } else {
     const b = currentBatter(g), tl = tiltLabel(b), p = fieldingTeam(g).pitcher;
     const best = [...repertoire(p)].sort((x, y) => y.q - x.q)[0];
     body = `<h2>Defense — your orders</h2>
       <div class="group"><span class="label">Pitching approach</span>${seg('approach', ui.approach, [['nibble', 'Nibble'], ['normal', 'Normal'], ['attack', 'Attack zone']])}</div>
-      <div class="group"><span class="label">Pitch mix</span>${seg('mix', ui.mix, [['fb', 'Fastballs'], ['mix', 'Mix'], ['off', 'Offspeed']])}
+      <div class="group"><span class="label">Pitch mix</span>${seg('mix', ui.mix, [['fb', 'Fastballs'], ['mix', 'Mix'], ['off', 'Offspeed']], {}, st.mix)}
         <div class="hint">${b.name}${tl ? ` is a ${tl}` : ' has no big weakness'}. ${p.name}'s best pitch: ${best.name} (${best.q}).</div></div>
-      <div class="group"><span class="label">Pitch call</span>${seg('call', ui.call, [['', 'None'], ['pitchout', 'Pitchout'], ['ibb', 'Walk him']], { pitchout: !callOk('pitchout') })}<div class="hint">${HINTS[ui.call]}</div></div>
-      <div class="group"><span class="label">Alignment</span><div>${chk('shift', ui.shift, 'Shift', false)}${chk('infieldIn', ui.infieldIn, 'Infield in', !b3)}</div>
-        ${seg('depth', ui.depth, [['shallow', 'Shallow OF'], ['normal', 'Normal OF'], ['deep', 'Deep OF']])}
+      <div class="group"><span class="label">Pitch call</span>${seg('call', ui.call, [['', 'None'], ['pitchout', 'Pitchout'], ['ibb', 'Walk him']], { pitchout: !callOk('pitchout') }, st.call)}<div class="hint">${HINTS[ui.call]}</div></div>
+      <div class="group"><span class="label">Alignment</span><div>${chk('shift', ui.shift, `Shift${st.shift ? ' ★' : ''}`, false)}${chk('infieldIn', ui.infieldIn, `Infield in${st.infieldIn ? ' ★' : ''}`, !b3)}</div>
+        ${seg('depth', ui.depth, [['shallow', 'Shallow OF'], ['normal', 'Normal OF'], ['deep', 'Deep OF']], {}, st.depth)}
         <div class="hint">Shift cuts singles from power hitters; deep OF trims extra-base hits but lets runners tag up.</div></div>`;
   }
   return `${banner}${body}${speed}<div class="group"><span class="label">Autopilot</span><div class="row"><button class="sm" data-act="atbat">Auto at-bat</button><button class="sm" data-act="autohalf">Rest of half-inning</button><button class="sm" data-act="autogame">Finish game</button></div></div>`;
@@ -440,6 +461,15 @@ function logPanel() {
   return `<section><h2>Play by play</h2><div class="log">${lines.map((l, i) => `<p class="${l.startsWith('—') ? 'sep' : i < fresh ? 'new' : ''}">${l}</p>`).join('')}</div></section>`;
 }
 
+function coachCard() {
+  const g = app.g;
+  app.sugg = [];
+  if ((!app.settings.coach && !app.tut) || g.over || app.auto) return '';
+  app.sugg = advise(g, mine(), ui);
+  const rows = app.sugg.map((x, i) => `<div class="sg"><span class="ic">${x.icon}</span><div class="tx"><b>${x.title}</b><small>${x.why}</small></div><button class="sm ${i ? '' : 'primary'}" data-act="sugg" data-i="${i}">Do it</button></div>`).join('');
+  return `<section class="coach"><h2>🧑‍🏫 Coach says</h2>${rows || '<small>Nothing to change right now — play on.</small>'}</section>`;
+}
+
 function renderGame() {
   if (!app.g) {
     const ng = app.lg.phase === 'done' ? null : L.nextGame(app.lg);
@@ -455,8 +485,8 @@ function renderGame() {
   if (ui.sub === 'club') body = `<section>${bench()}</section>`;
   else if (ui.sub === 'plays') body = logPanel();
   else if (ui.sub === 'box') body = boxScore();
-  else body = `<section>${nowCard()}</section><section>${vsStrip()}</section><section>${wpCard()}</section><section>${ordersPanel()}</section>`;
-  return `${scorebug()}${nav}${body}`;
+  else body = `<section>${nowCard()}</section>${coachCard()}<section>${vsStrip()}</section><section>${wpCard()}</section><section>${ordersPanel()}</section>`;
+  return `${scorebug()}${app.tut ? tutCard() : ''}${nav}${body}`;
 }
 
 // ---------- rendering: lineup ----------
@@ -509,6 +539,11 @@ function renderOffseason() {
   return head;
 }
 
+function todoCard() {
+  const btn = (a) => (a ? (a.act === 'off' ? `<button class="sm" data-act="off" data-v="${a.v}">${a.label}</button>` : `<button class="sm" data-act="${a.act}">${a.label}</button>`) : '');
+  return `<section class="coach"><h2>📝 Manager's to-do</h2>${todo(app.lg).map((i) => `<div class="sg"><span class="ic">${i.icon}</span><div class="tx"><small style="color:var(--ink)">${i.text}</small></div>${btn(i.act)}</div>`).join('')}</section>`;
+}
+
 function renderSeason() {
   const lg = app.lg, t = L.userTeam(lg), st = L.standings(lg), rank = st.indexOf(t) + 1;
   const ng = lg.phase === 'done' ? null : L.nextGame(lg);
@@ -535,7 +570,7 @@ function renderSeason() {
   const res = lg.results.slice(0, 8).map((r) => `<tr><td>${r.away}</td><td>${r.ar}</td><td>${r.home}</td><td>${r.hr}</td></tr>`).join('');
   const hist = lg.history.length ? `<section><h2>History</h2><div class="scroll"><table><tr><th>Season</th><th>Champion</th><th>You</th><th></th></tr>${[...lg.history].reverse().map((h) => `<tr><td>${h.season}</td><td>${h.champion}</td><td>${h.w}-${h.l}</td><td><small>${h.result}</small></td></tr>`).join('')}</table></div></section>` : '';
   return `<section><h2>Season ${lg.season} · ${t.w}-${t.l} · ${lg.phase === 'regular' ? `${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'} place` : lg.phase === 'playoffs' ? 'playoffs' : 'complete'}</h2>${status}</section>
-    ${lg.phase === 'done' ? renderOffseason() : ''}${bracket}
+    ${todoCard()}${lg.phase === 'done' ? renderOffseason() : ''}${bracket}
     <div class="cols"><section><h2>Standings <small>(top 4 make the playoffs)</small></h2><div class="scroll"><table><tr><th></th><th>W</th><th>L</th><th>+/-</th></tr>${rows}</table></div></section>
     <section><h2>Latest results</h2><div class="scroll"><table>${res || '<tr><td>No games yet</td></tr>'}</table></div>
       <h2 style="margin-top:12px">League news</h2><div class="news">${lg.news.slice(0, 8).map((n) => `<p style="margin:3px 0">${n}</p>`).join('') || 'Quiet so far.'}</div></section></div>${hist}`;
@@ -568,10 +603,11 @@ function renderMore() {
     <section><h2>Display &amp; accessibility</h2>
       <div class="group"><span class="label">Theme</span>${seg('theme', s.theme, [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']])}</div>
       <div class="group"><span class="label">Text size</span>${seg('text', String(s.text), [['0', 'Normal'], ['1', 'Large'], ['2', 'Larger']])}</div>
-      <div class="group">${chk('cvd', s.cvd, 'Colour-blind-safe pitch colours', false)}${chk('sound', s.sound, 'Sound effects', false)}${chk('haptics', s.haptics, 'Haptics', false)}</div></section>
+      <div class="group"><span class="label">Field animations</span>${seg('visuals', s.visuals, [['full', 'Full'], ['quick', 'Quick'], ['off', 'Off']])}</div>
+      <div class="group">${chk('coach', s.coach, 'Show the coach’s suggestions', false)}${chk('cvd', s.cvd, 'Colour-blind-safe pitch colours', false)}${chk('sound', s.sound, 'Sound effects', false)}${chk('haptics', s.haptics, 'Haptics', false)}</div></section>
     <section><h2>Exhibition</h2><p class="mute">A one-off game with a random matchup. Share the link and a friend gets the same two teams to beat your score.</p>
       <div class="row"><button data-act="exhibit">New exhibition game</button>${exSeed ? '<button data-act="share">Share this game</button>' : ''}</div>${exSeed ? `<small>Game code #${exSeed}</small>` : ''}</section>
-    <section><h2>Help &amp; data</h2><div class="row"><button data-act="tips">How to play</button><button class="ghost" data-act="reset">Reset all progress</button></div></section>`;
+    <section><h2>Help &amp; data</h2><div class="row"><button data-act="guide">📖 How to play</button><button data-act="starttut">🎓 Tutorial</button><button data-act="title">🏠 Title screen</button><button class="ghost" data-act="reset">Reset all progress</button></div></section>`;
 }
 
 // ---------- shell ----------
@@ -588,11 +624,120 @@ function renderBar() {
 
 function render() {
   const t = L.userTeam(app.lg), st = L.standings(app.lg), rank = st.indexOf(t) + 1;
-  $('top').innerHTML = `<h1>SKIP<b>PER</b></h1><small>${t.name} · ${t.w}-${t.l}${app.lg.phase === 'regular' ? ` · ${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'}` : app.lg.phase === 'playoffs' ? ' · playoffs' : ''}</small>`;
+  $('top').innerHTML = `<h1 data-act="title">SKIP<b>PER</b></h1><small>${t.name} · ${t.w}-${t.l}${app.lg.phase === 'regular' ? ` · ${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'}` : app.lg.phase === 'playoffs' ? ' · playoffs' : ''}</small>`;
   for (const b of document.querySelectorAll('#nav button')) b.classList.toggle('on', b.dataset.tab === app.tab);
   const views = { game: renderGame, lineup: renderLineup, season: renderSeason, stats: renderStats, more: renderMore };
   $('view').innerHTML = views[app.tab]();
+  const slot = $('camslot');
+  if (slot) slot.appendChild(cam.svg);
   renderBar();
+  renderScreen();
+  applySpot();
+}
+
+// ---------- title / intro / guide screens ----------
+function renderScreen() {
+  const box = $('screen');
+  box.className = app.screen === 'start' ? 'dark' : '';
+  if (!app.screen) { box.innerHTML = ''; return; }
+  const t = L.userTeam(app.lg);
+  if (app.screen === 'intro') box.innerHTML = introHtml(app.introStep, { city: t.city, nick: t.nick });
+  else if (app.screen === 'guide') box.innerHTML = guideHtml(0);
+  else {
+    const inSeason = app.lg.day > 0 || app.lg.history.length > 0 || app.lg.phase !== 'regular';
+    const label = app.g ? `${app.kind === 'tutorial' ? 'Tutorial' : app.kind === 'exhibit' ? 'Exhibition' : `Season ${app.lg.season}`} · game in progress` : inSeason ? `Season ${app.lg.season} · ${t.w}-${t.l}` : 'Start season';
+    box.innerHTML = startHtml({ cont: !!app.g || inSeason, label: app.g || inSeason ? label : 'Start season', hasDaily: true, dailyDone: app.daily.date === todayKey() });
+  }
+}
+function closeScreen() { app.screen = app.prevScreen && app.screen === 'guide' ? app.prevScreen : null; app.prevScreen = null; render(); }
+function openGuide() { app.prevScreen = app.screen; app.screen = 'guide'; render(); }
+function finishIntro(withTut) {
+  const city = ($('clubCity') || {}).value, nick = ($('clubNick') || {}).value, t = L.userTeam(app.lg);
+  if (city && city.trim()) t.city = city.trim();
+  if (nick && nick.trim()) t.nick = nick.trim();
+  t.name = `${t.city} ${t.nick}`;
+  app.settings.introSeen = true; app.screen = null; persist();
+  if (withTut) startTutorial(); else { app.tab = 'game'; render(); }
+}
+
+// ---------- tutorial ----------
+const tutStep = () => TUTORIAL[app.tut.step];
+function startTutorial() {
+  if (app.kind !== 'tutorial') { app.savedG = app.g; app.savedKind = app.kind; }
+  setAuto(false, true);
+  const g = newGame(777, 1);
+  g.user = g.away; app.g = g; app.kind = 'tutorial'; app.tab = 'game'; app.screen = null; app.prevScreen = null;
+  resetCalls(); cam.update(g);
+  g.log.push('Practice game — nothing here counts. You manage the visitors.');
+  app.tut = { step: 0, pitches: 0, stepPitches: 0, stolen: false, autoUsed: false, changed: false, advancing: false };
+  tutEnter(); render();
+}
+function exitTutorial(done, silent = false) {
+  setAuto(false, true);
+  if (done) app.settings.tutDone = true;
+  app.g = app.savedG || null; app.kind = app.savedKind || null; app.savedG = null; app.savedKind = null; app.tut = null;
+  if (app.g) cam.update(app.g);
+  if (!silent) { app.tab = done ? 'season' : 'game'; persist(); render(); }
+}
+function runScene(name) {
+  const g = app.g, bt = battingTeam(g);
+  if (name === 'runner') {
+    const r = [...bt.lineup].filter((p) => p !== currentBatter(g)).sort((a, b) => b.speed - a.speed)[0];
+    r.speed = Math.max(r.speed, 86); g.bases = [r, null, null]; g.outs = 0;
+    g.pa = { balls: 0, strikes: 0, pitches: 0, seq: [], locs: [] }; cam.update(g);
+  } else if (name === 'gassed') {
+    const p = fieldingTeam(g).pitcher; p.stats.pitches = Math.round(p.stamina * 1.05);
+  }
+}
+function tutEnter() { const s = tutStep(); app.tut.stepPitches = 0; app.tut.advancing = false; if (s.scene) runScene(s.scene); }
+function tutNext() {
+  if (!app.tut) return;
+  app.tut.step++;
+  if (app.tut.step >= TUTORIAL.length) { exitTutorial(true); return; }
+  tutEnter(); render();
+}
+function tutCheck() {
+  if (!app.tut || app.tut.advancing) return;
+  const s = tutStep();
+  if (s.id === 'steal' && app.tut.stepPitches >= 3) app.tut.stolen = true;
+  if (!s.manual && s.ok && s.ok({ g: app.g, app, ui, tut: app.tut })) {
+    app.tut.advancing = true;
+    setTimeout(() => { if (app.tut && tutStep() === s) tutNext(); }, 500);
+  }
+}
+function tutCard() {
+  const s = tutStep(), n = TUTORIAL.length, i = app.tut.step;
+  const btn = s.manual ? `<button class="primary" data-act="tutnext">${s.last ? 'Start my season' : 'Continue'}</button>`
+    : s.button ? `<button class="primary" data-act="${s.button.act}">${s.button.label}</button>` : '<small class="mute">Do the highlighted action to continue</small>';
+  return `<section class="tut"><h2>Tutorial · ${i + 1}/${n} — ${s.title}</h2><p>${s.text}</p><div class="row">${btn}${s.last ? '<button class="sm" data-act="tutexit">Keep practicing</button>' : '<button class="ghost sm" data-act="tutnext">Skip step</button><button class="ghost sm" data-act="tutexit">Exit</button>'}</div></section>`;
+}
+function applySpot() {
+  for (const e of document.querySelectorAll('.spot')) e.classList.remove('spot');
+  if (!app.tut || app.tab !== 'game') return;
+  const sel = tutStep().spot;
+  if (!sel) return;
+  const e = document.querySelector(sel);
+  if (e) (e.closest('label') || e).classList.add('spot');
+}
+
+// ---------- coach suggestions ----------
+function ordersChanged() {
+  const g = app.g;
+  if (!g || g.over || userBats()) return;
+  g.lastDef = { ...(g.lastDef || {}), shift: ui.shift, depth: ui.depth, infieldIn: ui.infieldIn && !!g.bases[2] };
+  cam.update(g);
+}
+function applySugg(i) {
+  const x = app.sugg[i], g = app.g;
+  if (!x || !g) return;
+  const a = x.apply;
+  if (a.ui) { Object.assign(ui, a.ui); ordersChanged(); }
+  if (a.sub === 'ph') pinchHit(g, mine(), a.id);
+  else if (a.sub === 'pr') pinchRun(g, mine(), a.base, a.id);
+  else if (a.sub === 'pitch') { changePitcher(g, mine(), a.id); if (app.tut) app.tut.changed = true; }
+  else if (a.sub === 'dsub') defSub(g, mine(), a.id, a.i);
+  if (a.sub) cam.update(g);
+  toast(`Coach: ${x.title}`); persist(); render(); tutCheck();
 }
 
 // ---------- dialogs ----------
@@ -623,19 +768,6 @@ function openDefSub(benchId) {
   const t = mine(), b = t.bench.find((p) => p.id === benchId); if (!b) return;
   const rows = t.lineup.map((p, i) => `<tr><td>${i + 1}. ${p.name}<br><small>${p.pos} · DEF ${p.def ?? 55} · CON ${p.contact}</small></td><td><button class="sm" data-act="dsub" data-id="${b.id}" data-i="${i}">Replace</button></td></tr>`).join('');
   openDialog(`<h2 style="margin-top:0">${b.name} <small>DEF ${b.def ?? 55} · CON ${b.contact}</small></h2><p class="hint">Who comes out? A glove-first swap protects a lead but weakens your bat.</p><table>${rows}</table><div class="row" style="justify-content:flex-end"><button data-act="closecard">Cancel</button></div>`);
-}
-
-const TIPS = [
-  ['You are the manager', 'You never swing or throw. You make the calls — and the players do the rest. Tap <b>Next pitch</b> to play one pitch with your orders.'],
-  ['Read the tracker', 'The strike zone shows each pitch with its type and speed. The count and outs sit beside the diamond. Tags show hot/cold streaks and platoon edges (lefty vs. righty).'],
-  ['Give orders', 'Batting: choose an approach and a play call — take, steal, bunt, hit &amp; run. Fielding: approach, pitch mix, pitchout, shift, outfield depth. Watch the pitcher’s arm and use the bullpen.'],
-  ['Let auto mode drive', '<b>▶ Auto</b> lets the AI manage while you watch. It pauses at decision points (tired pitcher, runners in scoring position, late &amp; close). <b>⏭ Decision</b> skips ahead to the next one. Tune it in More.'],
-  ['Build a season', 'Play 28 games, reach the playoffs, then use the off-season: sign free agents and prospects, make trades, and stay under budget. Set your lineup on the Lineup tab, or let ✨ Auto do it.'],
-];
-function showTips(i = 0) {
-  const [title, body] = TIPS[i], last = i === TIPS.length - 1;
-  openDialog(`<h2 style="margin-top:0">${title}</h2><p>${body}</p><div class="steps">${TIPS.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>
-    <div class="row" style="justify-content:space-between"><button class="ghost" data-act="tipdone">Skip</button><span>${i ? `<button data-act="tip" data-i="${i - 1}">Back</button> ` : ''}${last ? '<button class="primary" data-act="tipdone">Let’s play</button>' : `<button class="primary" data-act="tip" data-i="${i + 1}">Next</button>`}</span></div>`);
 }
 
 // ---------- sharing ----------
@@ -700,7 +832,23 @@ document.addEventListener('click', (e) => {
   switch (d.act) {
     case 'card': showCard(d.uid); return;
     case 'closecard': closeDialog(); return;
-    case 'sub': ui.sub = d.sub; render(); window.scrollTo(0, 0); return;
+    case 'title': app.screen = 'start'; render(); return;
+    case 'closescreen': closeScreen(); return;
+    case 'guide': openGuide(); return;
+    case 'startguide': openGuide(); return;
+    case 'startcontinue': app.screen = null; app.tab = app.g ? 'game' : (app.lg.day > 0 || app.lg.history.length ? 'season' : 'game'); render(); return;
+    case 'startexhibit': startExhibition(); return;
+    case 'startdaily': startDaily(); return;
+    case 'starttut': startTutorial(); return;
+    case 'introopen': app.introStep = 0; app.screen = 'intro'; render(); return;
+    case 'intro': app.introStep = Number(d.i); render(); return;
+    case 'introskip': finishIntro(false); return;
+    case 'introdone': finishIntro(!!d.tut); return;
+    case 'sugg': applySugg(Number(d.i)); return;
+    case 'tutnext': if (app.tut && tutStep().last) exitTutorial(true); else tutNext(); return;
+    case 'tutexit': exitTutorial(false); return;
+    case 'tutfield': if (app.tut && app.g) { autoHalf(app.g, [app.g.home, app.g.away]); cam.update(app.g); persist(); render(); tutCheck(); } return;
+    case 'sub': ui.sub = d.sub; render(); window.scrollTo(0, 0); tutCheck(); return;
     case 'pitch1': throwPitch(); return;
     case 'atbat': autoAtBat(); return;
     case 'autohalf': autopilot('half'); return;
@@ -729,41 +877,37 @@ document.addEventListener('click', (e) => {
     case 'tsel': if (d.who === 'mine') ui.tMine = ui.tMine === d.uid ? null : d.uid; else ui.tTheirs = ui.tTheirs === d.uid ? null : d.uid; render(); return;
     case 'tradeprop': { const r = L.proposeTrade(app.lg, L.userTeam(app.lg), ui.tMine, app.lg.teams[ui.tradeTeam], ui.tTheirs); toast(r.msg); if (r.ok) { ui.tMine = ui.tTheirs = null; persist(); } render(); return; }
     case 'reset': if (confirm('Erase your season and start over?')) { setAuto(false, true); clearSave(); app.g = null; app.kind = null; app.daily = {}; app.lg = L.createLeague(); app.off = null; persist(); render(); } return;
-    case 'tips': showTips(0); return;
-    case 'tip': showTips(Number(d.i)); return;
-    case 'tipdone': app.settings.seenTips = true; persist(); closeDialog(); return;
-    case 'ph': if (g && pinchHit(g, mine(), id)) { persist(); render(); } return;
-    case 'pr': if (g && pinchRun(g, mine(), Number(d.base), id)) { persist(); render(); } return;
-    case 'pitch': if (g && changePitcher(g, mine(), id)) { persist(); render(); } return;
+    case 'ph': if (g && pinchHit(g, mine(), id)) { cam.update(g); persist(); render(); } return;
+    case 'pr': if (g && pinchRun(g, mine(), Number(d.base), id)) { cam.update(g); persist(); render(); } return;
+    case 'pitch': if (g && changePitcher(g, mine(), id)) { if (app.tut) app.tut.changed = true; cam.update(g); persist(); render(); tutCheck(); } return;
     case 'dsubopen': openDefSub(id); return;
-    case 'dsub': if (g && defSub(g, mine(), id, Number(d.i))) { closeDialog(); persist(); render(); } return;
+    case 'dsub': if (g && defSub(g, mine(), id, Number(d.i))) { cam.update(g); closeDialog(); persist(); render(); } return;
     default:
   }
 });
 
-const SETTING_SET = { level: Number, speed: String, theme: String, text: Number };
+const SETTING_SET = { level: Number, speed: String, theme: String, text: Number, visuals: String };
 document.addEventListener('change', (e) => {
   const s = e.target.dataset;
   if (s.set && s.set in SETTING_SET) { app.settings[s.set] = SETTING_SET[s.set](e.target.value); applyPrefs(); persist(); render(); return; }
   if (s.set === 'tradeTeam') { ui.tradeTeam = Number(e.target.value); ui.tMine = ui.tTheirs = null; render(); return; }
   if (s.set === 'tradeKind') { ui.tradeKind = e.target.value; ui.tMine = ui.tTheirs = null; render(); return; }
-  if (s.set) { ui[s.set] = e.target.value; render(); return; }
+  if (s.set) { ui[s.set] = e.target.value; ordersChanged(); render(); tutCheck(); return; }
   const tg = s.toggle;
   if (!tg) return;
   if (tg.startsWith('pause:')) { app.settings.pause[tg.slice(6)] = e.target.checked; persist(); return; }
-  if (['sound', 'haptics', 'cvd', 'autoNext', 'autoLineup'].includes(tg)) {
+  if (['sound', 'haptics', 'cvd', 'autoNext', 'autoLineup', 'coach'].includes(tg)) {
     app.settings[tg] = e.target.checked; applyPrefs(); persist();
     if (e.target.checked && tg === 'sound') fx.hit();
     if (e.target.checked && tg === 'haptics') fx.tick();
-    if (tg === 'cvd' || tg === 'autoLineup') render();
+    if (tg === 'cvd' || tg === 'autoLineup' || tg === 'coach') render();
     return;
   }
-  ui[tg] = e.target.checked; render();
+  ui[tg] = e.target.checked; ordersChanged(); render();
 });
 $('card').addEventListener('click', (e) => { if (e.target === $('card')) closeDialog(); });
 
 boot();
 if (app.g && !app.g.over) app.tab = 'game';
 render();
-if (!app.settings.seenTips) setTimeout(() => showTips(0), 500);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
