@@ -310,7 +310,7 @@ export function fbChip(g, mine) {
   const ms = g.home === mine ? 'home' : 'away', d = g.score[ms] - g.score[other(ms)], lv = fbLeverage(g, mine);
   const chips = [{ t: d > 0 ? `Leading by ${d}` : d < 0 ? `Trailing by ${-d}` : 'Tied', tone: d > 0 ? 'good' : d < 0 ? 'bad' : '' }];
   if (g.phase === 'snap') chips.push({ t: `${ORD[g.down]} & ${g.ball + g.toGo >= 100 ? 'goal' : Math.round(g.toGo)}`, tone: '' });
-  chips.push({ t: `${g.ot ? 'OT' : 'Q' + g.quarter} ${fmtClock(g.clock)}`, tone: '' });
+  chips.push({ t: `${pc(lv.now)}% win`, tone: lv.now >= 0.5 ? 'good' : 'bad' });
   if (lv.level !== 'Low') chips.push({ t: `⚡ ${lv.level} leverage`, tone: lv.level === 'High' ? 'warn' : '' });
   return chips;
 }

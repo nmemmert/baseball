@@ -28,6 +28,12 @@ Installable as an iPhone/Android PWA (works offline).
 - **Tutorial:** a hands-on practice game that walks you through pitching, orders, steals, the coach, the bench, auto mode, defense and the bullpen — each step waits for you to do the thing.
 - **How to play:** a full written guide (screen legend, every order, ratings, auto mode, season, strategy tips, FAQ) from the title screen or More.
 
+## Graphics
+- **Generated art, no image files:** a crest for every team (scorebug, standings) and a portrait for every player (cap in baseball, helmet in football) on matchup strips and player cards.
+- **Baseball field cam:** crowd, padded wall with distance markers, warning track, mowing stripes, shaded players, a spinning ball with a motion trail, and particle bursts and a flash on home runs and runs scoring.
+- **Football field cam:** textured grass, patterned end zones with team names, a midfield logo, shaded helmets, a glowing first-down line, a trailing football with laces, and touchdown particles, flash and a camera shake on sacks and scores.
+- **Polish:** score "bump" animation, confetti on wins and titles, win-probability area graph, tab fade-ins and button press feedback. **More → Effects: Reduced** (or your phone's reduce-motion setting) turns off shake, particles and confetti.
+
 ## Intel (both sports)
 - **🔎 Intel tab:** *where you are* (situation in plain English plus how much this moment swings your win chance), *their weaknesses to attack*, *your weaknesses to cover*, *strengths on both sides*, and *how the game has gone*.
 - It reads today's data, not just ratings: baseball tracks which of your pitches are working or getting hit and your recent at-bats; football tracks run vs. pass yards, 3rd-down success, which of your calls and defenses work, and how often they blitz.

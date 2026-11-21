@@ -6,6 +6,7 @@ import {
 import * as FL from './fbleague.js';
 import { attachRng } from './engine.js';
 import { FB_TUTORIAL } from './screens.js';
+import { crest, face } from './art.js';
 import { fbGameIntel, fbReport, fbChip, renderIntel, renderReport, chipHtml } from './intel.js';
 
 const ORD = ['', '1st', '2nd', '3rd', '4th'];
@@ -99,11 +100,11 @@ export function createFootball(ctx) {
     if (v === 'off') return 'off';
     return fb.auto ? (sp === 'instant' ? 'off' : sp === 'fast' ? 'quick' : v) : v;
   }
-  const playCam = (ev) => (fb.g && ev && fb.snap ? getCam().play(ev, fb.snap, fb.g, { mode: camMode() }) : Promise.resolve());
+  const playCam = (ev) => (fb.g && ev && fb.snap ? getCam().play(ev, fb.snap, fb.g, { mode: camMode(), effects: ctx.effectsOn() }) : Promise.resolve());
   function afterSnap(ev, quiet) {
     const g = fb.g;
     reactTo(ev);
-    if (g.over) { const won = g.winner === mySide(); setTimeout(won ? ctx.fx.win : ctx.fx.lose, 350); }
+    if (g.over) { const won = g.winner === mySide(); setTimeout(won ? ctx.fx.win : ctx.fx.lose, 350); if (won) setTimeout(ctx.confetti, 500); }
     ctx.persist(); ctx.render();
     if (quiet || !ev) getCam().update(g); else playCam(ev);
     tutCheck();
@@ -210,11 +211,11 @@ export function createFootball(ctx) {
     const situ = ph === 'snap' ? `${ORD[g.down]} &amp; ${g.ball + g.toGo >= 100 ? 'Goal' : Math.round(g.toGo)} · ${fieldPos(g)}` : ph === 'kickoff' ? 'Kickoff' : 'Try after TD';
     const role = ph === 'kickoff' ? (acting ? 'KICKING' : 'RECEIVING') : ph === 'try' ? (acting ? 'TRY' : 'DEFENSE') : acting ? 'OFFENSE' : 'DEFENSE';
     const cls = acting ? 'bat' : 'fld';
-    const mid = g.over ? '<div class="inn fin">FINAL</div>' : `<div class="inn">${q} ${fmtClock(g.clock)} <span class="rp ${cls}">${role}</span></div><small>${situ} · ${Math.round(wpMine(g) * 100)}% win</small>`;
+    const mid = g.over ? '<div class="inn fin">FINAL</div>' : `<div class="inn">${q} ${fmtClock(g.clock)} <span class="rp ${cls}">${role}</span></div><small>${situ}</small>`;
     const ball = (s) => (side === s && !g.over ? '<i class="pball">🏈</i>' : '');
     const a = g.away, h = g.home, col = ctx.teamCol;
-    return `<div class="bug"><div class="side ${a === mine() ? 'me' : ''}"><i class="chip" style="background:${col(a)}"></i><div class="ab">${abbr(a)}${ball('away')}<small>${g.timeouts.away} TO</small></div><span class="runs">${g.score.away}</span></div><div class="mid">${mid}</div>
-      <div class="side r ${h === mine() ? 'me' : ''}"><span class="runs">${g.score.home}</span><div class="ab">${abbr(h)}${ball('home')}<small>${g.timeouts.home} TO</small></div><i class="chip" style="background:${col(h)}"></i></div></div>`;
+    return `<div class="bug"><div class="side ${a === mine() ? 'me' : ''}">${crest(a, 30)}<div class="ab">${abbr(a)}${ball('away')}<small>${g.timeouts.away} TO</small></div><span class="runs">${g.score.away}</span></div><div class="mid">${mid}</div>
+      <div class="side r ${h === mine() ? 'me' : ''}"><span class="runs">${g.score.home}</span><div class="ab">${abbr(h)}${ball('home')}<small>${g.timeouts.home} TO</small></div>${crest(h, 30)}</div></div>`;
   }
   function stage() {
     const g = fb.g, last = [...g.log].reverse().find((l) => !l.startsWith('—')) || '';
@@ -320,7 +321,7 @@ export function createFootball(ctx) {
     else if (fb.g && fb.kind === 'season') status = '<p>Game in progress.</p><div class="row"><button class="primary" data-act="fbresume">Resume game</button></div>';
     else if (ng) { const home = ng.home === t; scout = fold('fscout', `🔎 Scouting: ${(home ? ng.away : ng.home).nick}`, renderReport(fbReport(home ? ng.away : ng.home, { asOpp: true }), { goodT: '🛡️ Their strengths — watch out', badT: '🎯 Their weaknesses — attack these' }) + renderReport(fbReport(t, { opp: home ? ng.away : ng.home }), { goodT: '✅ Your edges against them', badT: '⚠️ Where they have the edge' }), true); status = `<p><b>${ng.label}</b><br>${home ? 'vs' : '@'} <b>${(home ? ng.away : ng.home).name}</b> <small>(${home ? 'home' : 'away'})</small></p><div class="row"><button class="primary" data-act="fbplaynext">Coach game</button><button data-act="fbsimgame">Sim game</button><button class="ghost" data-act="fbsimend">Sim to end of season</button></div>`; }
     else status = `<p>${FL.fbUserEliminated(l) ? 'You are out of the playoffs.' : 'Waiting on the other playoff game.'}</p><div class="row"><button class="primary" data-act="fbadvance">Advance a week</button><button class="ghost" data-act="fbsimend">Sim to end of season</button></div>`;
-    const rows = st.map((x, i) => `<tr class="${x === t ? 'me' : ''} ${i === 3 ? 'cut' : ''}"><td>${i + 1}. ${x.name}</td><td>${x.w}-${x.l}${x.t ? '-' + x.t : ''}</td><td>${x.pf - x.pa > 0 ? '+' : ''}${x.pf - x.pa}</td></tr>`).join('');
+    const rows = st.map((x, i) => `<tr class="${x === t ? 'me' : ''} ${i === 3 ? 'cut' : ''}"><td>${i + 1}. ${crest(x, 16)} ${x.name}</td><td>${x.w}-${x.l}${x.t ? '-' + x.t : ''}</td><td>${x.pf - x.pa > 0 ? '+' : ''}${x.pf - x.pa}</td></tr>`).join('');
     let bracket = '';
     if (l.playoffs) { const sr = (s, label) => `<tr><td>${label}</td><td>${l.teams[s.a].nick}${s.done && s.winner === s.a ? ' ✔' : ''}</td><td>${l.teams[s.b].nick}${s.done && s.winner === s.b ? ' ✔' : ''}</td><td>${s.score ? s.score.join('-') : ''}</td></tr>`; bracket = `<section><h2>Playoffs (single game)</h2><table>${l.playoffs.semis.map((s, i) => sr(s, `Semi ${i + 1}`)).join('')}${l.playoffs.final ? sr(l.playoffs.final, 'Final') : ''}</table></section>`; }
     const res = l.results.slice(0, 8).map((r) => `<tr><td>${r.away}</td><td>${r.as}</td><td>${r.home}</td><td>${r.hs}</td></tr>`).join('');
@@ -338,7 +339,7 @@ export function createFootball(ctx) {
     if (!found) return;
     const { p, t } = found, lab = RATING_LABELS[p.pos], s = p.ss;
     const bars = [[lab[0], p.a], [lab[1], p.b]].map(([k, v]) => `<span class="label">${k}</span><div class="meter ${v >= 70 ? 'good' : ''}"><i style="width:${v}%"></i></div><b>${v}</b>`).join('');
-    ctx.openDialog(`<h2 style="margin-top:0">${p.name}</h2><p class="mute">${t.name} · ${POS_NAMES[p.pos]} · age ${p.age}</p><div class="bars">${bars}</div>
+    ctx.openDialog(`<div class="cardhead">${face(p, ctx.teamCol(t), 58, 'fb')}<div><h2 style="margin:0">${p.name}</h2></div></div><p class="mute">${t.name} · ${POS_NAMES[p.pos]} · age ${p.age}</p><div class="bars">${bars}</div>
       <p><small>Season: ${s.py ? `${s.py} pass yds, ${s.ptd} TD · ` : ''}${s.ry ? `${s.ry} rush yds · ` : ''}${s.recy ? `${s.recy} rec yds · ` : ''}${s.fga ? `FG ${s.fgm}/${s.fga} · ` : ''}${s.sk ? `${s.sk} sacks · ` : ''}${s.int ? `${s.int} INT` : ''}</small></p><div class="row" style="justify-content:flex-end"><button data-act="closecard">Close</button></div>`);
   }
 

@@ -12,10 +12,11 @@ import { introHtml, startHtml, guideHtml, sportHtml, TUTORIAL } from './screens.
 import { createFootball } from './fbui.js';
 import { createFbCam } from './fbcam.js';
 import { fx, react, prefs, initHaptics } from './feedback.js';
+import { crest, face } from './art.js';
 
 const DEFAULTS = {
   sound: true, haptics: true, level: 1, theme: 'auto', text: 0, cvd: false, speed: 'normal', autoNext: false, autoLineup: false, seenTips: true, visuals: 'full', coach: true, introSeen: false, tutDone: false,
-  pause: { tired: true, scoring: true, late: true, loaded: false },
+  pause: { tired: true, scoring: true, late: true, loaded: false }, effects: 'full',
   sport: 'baseball', fbPause: { fourth: true, redzone: false, twominute: true, score: true }, fbTutDone: false,
 };
 const app = { settings: structuredClone(DEFAULTS), tab: 'game', lg: null, g: null, kind: null, daily: {}, auto: false, skipTok: -1, off: null, screen: null, prevScreen: null, introStep: 0, tut: null, sugg: [], snap: null, savedG: null, savedKind: null };
@@ -76,7 +77,7 @@ function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add
 const hue = (str) => { let h = 0; for (const c of str) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
 const teamCol = (t) => `hsl(${hue(t.nick)} 62% 46%)`;
 const initials = (n) => n.split(' ').map((x) => x[0]).join('').slice(0, 2);
-const avatar = (p, t) => `<span class="av" style="background:${teamCol(t)}">${initials(p.name)}</span>`;
+const avatar = (p, t) => face(p, teamCol(t), 46, 'bb');
 const todayKey = (d = new Date()) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 
 const cam = createCam({ teamCol });
@@ -181,7 +182,7 @@ function camMode() {
 }
 function playCam(ev) {
   if (!app.g || !ev || !app.snap) return Promise.resolve();
-  return cam.play(ev, app.snap, app.g, { mode: camMode() });
+  return cam.play(ev, app.snap, app.g, { mode: camMode(), effects: effectsOn() });
 }
 
 function afterPlay(ev, quiet = false) {
@@ -190,6 +191,7 @@ function afterPlay(ev, quiet = false) {
   if (g.over) {
     const won = (g.winner === 'home') === (g.home === mine());
     setTimeout(won ? fx.win : fx.lose, 350);
+    if (won) setTimeout(confetti, 500);
   }
   persist(); render();
   if (!ev || quiet) cam.update(g); else playCam(ev);
@@ -277,6 +279,7 @@ function finishGame() {
   const you = mine() === g.home ? g.home.runs : g.away.runs, them = mine() === g.home ? g.away.runs : g.home.runs;
   if (app.kind === 'season') {
     L.completeDay(app.lg, g);
+    if (app.lg.phase === 'done' && app.lg.champion === app.lg.userId) setTimeout(confetti, 400);
     toast(`${you > them ? 'Win' : 'Loss'} ${you}-${them}. ${L.userTeam(app.lg).w}-${L.userTeam(app.lg).l}`);
     app.tab = 'season';
   } else if (g.daily) {
@@ -312,9 +315,9 @@ function scorebug() {
   const wpH = winProb(g), wpMe = Math.round((g.home === mine() ? wpH : 1 - wpH) * 100);
   const mid = g.over ? '<div class="inn fin">FINAL</div>' : `<div class="inn">${g.half === 'top' ? '▲' : '▼'} ${g.inning} <span class="rp ${battingTeam(g) === mine() ? 'bat' : 'fld'}">${battingTeam(g) === mine() ? 'BATTING' : 'FIELDING'}</span></div><small>${g.outs} out · ${wpMe}% win</small>`;
   return `<div class="bug">
-    <div class="side ${a === mine() ? 'me' : ''}"><i class="chip" style="background:${teamCol(a)}"></i><div class="ab">${abbr(a)}<small>${a.hits} H</small></div><span class="runs">${a.runs}</span></div>
+    <div class="side ${a === mine() ? 'me' : ''}">${crest(a, 30)}<div class="ab">${abbr(a)}<small>${a.hits} H</small></div><span class="runs">${a.runs}</span></div>
     <div class="mid">${mid}</div>
-    <div class="side r ${h === mine() ? 'me' : ''}"><span class="runs">${h.runs}</span><div class="ab">${abbr(h)}<small>${h.hits} H</small></div><i class="chip" style="background:${teamCol(h)}"></i></div></div>`;
+    <div class="side r ${h === mine() ? 'me' : ''}"><span class="runs">${h.runs}</span><div class="ab">${abbr(h)}<small>${h.hits} H</small></div>${crest(h, 30)}</div></div>`;
 }
 
 function lineScore() {
@@ -339,7 +342,7 @@ function trackerSvg(locs, faded) {
   }).join('');
   return `<svg viewBox="0 0 200 230" role="img" aria-label="Pitch tracker"><rect class="z-out" x="18" y="30" width="164" height="164" rx="8"/>
     <rect class="z-in" x="50" y="62" width="100" height="100"/><path class="z-grid" d="M83 62 V162 M117 62 V162 M50 95 H150 M50 129 H150"/>
-    <path class="g-plate" opacity=".9" d="M70 208 h60 l-8 10 h-44 z"/>${dotsSvg}</svg>`;
+    <path class="g-plate" opacity=".9" d="M70 208 h60 l-8 10 h-44 z"/>${locs.length > 1 ? `<polyline points="${locs.map((l) => `${X(l.x)},${Y(l.y)}`).join(' ')}" fill="none" stroke="var(--mute)" stroke-opacity=".55" stroke-dasharray="2 3" stroke-width="1"/>` : ''}${dotsSvg}</svg>`;
 }
 
 function sparkline() {
@@ -348,7 +351,9 @@ function sparkline() {
   const W = 300, H = 54, n = Math.max(pts.length, 2);
   const xy = pts.map((v, i) => `${((i / (n - 1)) * W).toFixed(1)},${(H - 4 - v * (H - 8)).toFixed(1)}`).join(' ');
   const last = pts[pts.length - 1];
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Win probability"><line class="g-line" x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke-dasharray="3 4"/>
+  const gc = last >= 0.5 ? '#3ddc84' : '#ff3b5c';
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Win probability"><defs><linearGradient id="wpg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${gc}" stop-opacity=".38"/><stop offset="1" stop-color="${gc}" stop-opacity="0"/></linearGradient></defs>
+    <line class="g-line" x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke-dasharray="3 4"/><polygon points="0,${H} ${xy} ${W},${H}" fill="url(#wpg)"/>
     <polyline class="spark-line ${last >= 0.5 ? 'up' : 'down'}" points="${xy}"/></svg>`;
 }
 
@@ -587,7 +592,7 @@ function renderSeason() {
   } else {
     status = `<p>${L.userEliminated(lg) ? 'You are out of the playoffs.' : 'Waiting on the other series.'}</p><div class="row"><button class="primary" data-act="advance">Advance a day</button><button class="ghost" data-act="simend">Sim to end of season</button></div>`;
   }
-  const rows = st.map((x, i) => `<tr class="${x === t ? 'me' : ''} ${i === 3 ? 'cut' : ''}"><td>${i + 1}. ${x.name}</td><td>${x.w}</td><td>${x.l}</td><td>${x.rs - x.ra > 0 ? '+' : ''}${x.rs - x.ra}</td></tr>`).join('');
+  const rows = st.map((x, i) => `<tr class="${x === t ? 'me' : ''} ${i === 3 ? 'cut' : ''}"><td>${i + 1}. ${crest(x, 16)} ${x.name}</td><td>${x.w}</td><td>${x.l}</td><td>${x.rs - x.ra > 0 ? '+' : ''}${x.rs - x.ra}</td></tr>`).join('');
   let bracket = '';
   if (lg.playoffs) {
     const sr = (s, label) => `<tr><td>${label}</td><td>${lg.teams[s.a].nick} ${s.wa}</td><td>${lg.teams[s.b].nick} ${s.wb}</td><td>${s.done ? '✔' : ''}</td></tr>`;
@@ -631,6 +636,7 @@ function renderMore() {
       <div class="group"><span class="label">Theme</span>${seg('theme', s.theme, [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']])}</div>
       <div class="group"><span class="label">Text size</span>${seg('text', String(s.text), [['0', 'Normal'], ['1', 'Large'], ['2', 'Larger']])}</div>
       <div class="group"><span class="label">Field animations</span>${seg('visuals', s.visuals, [['full', 'Full'], ['quick', 'Quick'], ['off', 'Off']])}</div>
+      <div class="group"><span class="label">Effects (shake, particles, confetti)</span>${seg('effects', s.effects, [['full', 'Full'], ['reduced', 'Reduced']])}</div>
       <div class="group">${chk('coach', s.coach, 'Show the coach’s suggestions', false)}${chk('cvd', s.cvd, 'Colour-blind-safe pitch colours', false)}${chk('sound', s.sound, 'Sound effects', false)}${chk('haptics', s.haptics, 'Haptics', false)}</div>`)}
     ${fold('m_exh', 'Exhibition', `<p class="mute">A one-off game with a random matchup. Share the link and a friend gets the same two teams to beat your score.</p>
       <div class="row"><button data-act="exhibit">New exhibition game</button>${exSeed ? '<button data-act="share">Share this game</button>' : ''}</div>${exSeed ? `<small>Game code #${exSeed}</small>` : ''}`)}
@@ -651,6 +657,25 @@ function renderBar() {
 
 const isFb = () => app.settings.sport === 'football';
 
+// ---------- effects ----------
+const effectsOn = () => app.settings.effects !== 'reduced' && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+let prevRuns = '';
+function bumpScores() {
+  const els = [...document.querySelectorAll('.bug .runs')], cur = els.map((e) => e.textContent).join('|');
+  if (prevRuns && cur !== prevRuns && effectsOn()) {
+    const old = prevRuns.split('|');
+    els.forEach((e, i) => { if (e.textContent !== old[i]) { e.classList.add('bump'); setTimeout(() => e.classList.remove('bump'), 700); } });
+  }
+  prevRuns = els.length ? cur : '';
+}
+function confetti() {
+  if (!effectsOn()) return;
+  const box = document.createElement('div'); box.className = 'confetti';
+  const cols = ['#ffd166', '#ff3b5c', '#3ddc84', '#4aa8ff', '#ffffff'];
+  for (let i = 0; i < 46; i++) { const s = document.createElement('i'); s.style.cssText = `left:${Math.random() * 100}%;background:${cols[i % 5]};animation-delay:${(Math.random() * 0.9).toFixed(2)}s;animation-duration:${(2.4 + Math.random() * 1.6).toFixed(2)}s;transform:rotate(${Math.floor(Math.random() * 360)}deg)`; box.appendChild(s); }
+  document.body.appendChild(box); setTimeout(() => box.remove(), 4800);
+}
+
 function renderFb() {
   const t = app.tab;
   $('top').innerHTML = FB.topHtml();
@@ -663,7 +688,7 @@ function renderFb() {
   document.body.classList.toggle('ingame', t === 'game' && FB.hasGame());
   const bar = t === 'game' ? FB.renderBar() : '';
   $('bar').innerHTML = bar; document.body.classList.toggle('nobar', !bar);
-  FB.mount(); renderScreen();
+  FB.mount(); renderScreen(); bumpScores();
 }
 
 function renderMoreFb() {
@@ -676,6 +701,7 @@ function renderMoreFb() {
       <div class="group"><span class="label">Theme</span>${seg('theme', s.theme, [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']])}</div>
       <div class="group"><span class="label">Text size</span>${seg('text', String(s.text), [['0', 'Normal'], ['1', 'Large'], ['2', 'Larger']])}</div>
       <div class="group"><span class="label">Field animations</span>${seg('visuals', s.visuals, [['full', 'Full'], ['quick', 'Quick'], ['off', 'Off']])}</div>
+      <div class="group"><span class="label">Effects (shake, particles, confetti)</span>${seg('effects', s.effects, [['full', 'Full'], ['reduced', 'Reduced']])}</div>
       <div class="group">${chk('coach', s.coach, 'Show the coach’s suggestions', false)}${chk('sound', s.sound, 'Sound effects', false)}${chk('haptics', s.haptics, 'Haptics', false)}</div>`)}
     ${fold('m_exh', 'Exhibition', `<p class="mute">A one-off game with a random matchup.</p><div class="row"><button data-act="fbexhibit">New exhibition game</button></div>`)}
     ${fold('m_help', 'Help &amp; data', `<div class="row"><button data-act="guide">📖 How to play</button><button data-act="starttut">🎓 Tutorial</button><button data-act="title">🏠 Title screen</button><button class="ghost" data-act="fbreset">Reset football progress</button></div>`, true)}`;
@@ -698,6 +724,7 @@ function render() {
   renderBar();
   renderScreen();
   applySpot();
+  bumpScores();
 }
 
 // ---------- title / intro / guide screens ----------
@@ -820,7 +847,7 @@ function showCard(uid) {
   const season = p.type === 'bat' ? `${avg(s)} AVG · ${s.hr} HR · ${s.rbi} RBI · ${s.bb} BB · ${s.k} K (${s.g} G)` : `${ip(s)} IP · ${ra9(s)} RA9 · ${s.k} K · ${s.bb} BB (${s.g} G)`;
   const today = p.stats && (p.type === 'bat' ? p.stats.ab + p.stats.bb > 0 : p.stats.pitches > 0) ? `<p><small>Today: ${p.type === 'bat' ? batLine(p.stats) : pitLine(p.stats)}</small></p>` : '';
   const extra = p.type === 'bat' ? `<p><small>${tiltLabel(p) || 'No big pitch-type weakness'}</small></p>` : `<h3>Arsenal</h3>${bars(repertoire(p).map((a) => [a.code, a.q]))}`;
-  openDialog(`<h2 style="margin-top:0">${p.name}${tagHtml(p)}</h2>
+  openDialog(`<div class="cardhead">${face(p, t ? teamCol(t) : '#667', 58, 'bb')}<div><h2 style="margin:0">${p.name}${tagHtml(p)}</h2></div></div>
     <p class="mute">${t ? t.name : 'Free agent'} · ${p.pos} · age ${p.age} · ${p.type === 'bat' ? 'bats' : 'throws'} ${p.hand}${p.type === 'pit' && t ? ` · ${restLabel(p)}` : ''} · ${money(L.salary(p))}</p>${rb}${extra}
     <p>Season: ${season}</p>${today}<div class="row" style="justify-content:flex-end"><button data-act="closecard">Close</button></div>`);
 }
@@ -896,7 +923,7 @@ function swapRows(kind, i) {
 document.addEventListener('click', (e) => {
   initHaptics();
   const tab = e.target.closest('[data-tab]');
-  if (tab) { app.tab = tab.dataset.tab; ui.sel = null; render(); window.scrollTo(0, 0); return; }
+  if (tab) { app.tab = tab.dataset.tab; ui.sel = null; render(); window.scrollTo(0, 0); const v = $('view'); v.classList.remove('fade'); void v.offsetWidth; v.classList.add('fade'); return; }
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const g = app.g, id = Number(el.dataset.id), d = el.dataset;
@@ -961,7 +988,7 @@ document.addEventListener('click', (e) => {
   }
 });
 
-const SETTING_SET = { level: Number, speed: String, theme: String, text: Number, visuals: String };
+const SETTING_SET = { level: Number, speed: String, theme: String, text: Number, visuals: String, effects: String };
 document.addEventListener('change', (e) => {
   if (FB.change(e)) return;
   const s = e.target.dataset;
@@ -990,6 +1017,7 @@ const FB = createFootball({
   openDialog: (h) => openDialog(h), closeDialog: () => closeDialog(), confirm: (m) => confirm(m),
   tab: () => app.tab, setTab: (t) => { app.tab = t; }, closeScreen: () => { app.screen = null; app.prevScreen = null; },
   makeCam: () => createFbCam({ teamCol }),
+  effectsOn: () => effectsOn(), confetti: () => confetti(),
 });
 
 boot();
