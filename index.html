@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10261a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Skipper">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <title>Skipper — Baseball Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header><h1>Skipper</h1><span class="sub">You manage the Harbor City Skippers. Every pitch is someone else's job.</span>
+    <button id="new">New game</button></header>
+  <main>
+    <section id="scoreboard"></section>
+    <div class="cols">
+      <section id="field"></section>
+      <section id="orders"></section>
+    </div>
+    <div class="cols">
+      <section id="roster"></section>
+      <section id="log"></section>
+    </div>
+  </main>
+  <div id="bar"></div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
