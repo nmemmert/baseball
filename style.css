@@ -299,3 +299,20 @@ main { gap:8px; }
 .rp.bat { background:var(--green); } .rp.fld { background:var(--blue); }
 .panel.off { border-top:3px solid var(--green); } .panel.def { border-top:3px solid var(--blue); }
 .bug .mid .inn { white-space:nowrap; }
+
+/* ===== sport chooser & football ===== */
+.sports { display:grid; gap:12px; margin:8px auto 14px; max-width:360px; }
+.sportcard { display:grid; gap:4px; justify-items:center; text-align:center; padding:18px 14px; border-radius:18px; background:linear-gradient(180deg,var(--card2),var(--card)); border:1px solid var(--line2); color:var(--ink); }
+.sportcard .sp-ic { font-size:2.6rem; line-height:1; } .sportcard b { font-size:1.25rem; letter-spacing:.04em; }
+.sportcard .sp-d { color:var(--mute); font-size:.85rem; } .sportcard small { color:var(--blue); font-weight:600; margin-top:2px; }
+.fb-grass { fill:#2f8a47; } .fb-stripe { fill:#1b6a34; } .fb-ez { opacity:.88; } .fb-eztext { fill:#fff; font-size:11px; font-weight:900; letter-spacing:.3em; opacity:.85; }
+.fb-yard { stroke:#fff; opacity:.7; } .fb-num { fill:#fff; opacity:.55; font-size:10px; font-weight:800; } .fb-hash { stroke:#fff; opacity:.6; stroke-width:.7; }
+.fb-post { stroke:#ffd166; stroke-width:1.6; } .fb-fd { stroke:#ffd23f; stroke-width:1.8; } .fb-los { stroke:#4aa8ff; stroke-width:1.8; }
+.fb-dot { stroke:#fff; stroke-width:1; fill:#888; } .fb-dot-t { fill:#fff; font-size:4.6px; font-weight:800; pointer-events:none; }
+.fb-ball { fill:#8b4a1f; stroke:#fff; stroke-width:.6; } .fb-flag { font-size:14px; }
+.fbpop { font-size:14px; stroke-width:3px; }
+.fbwrap { max-width:460px; } .fbwrap svg.cam { background:#14391f; }
+.mu { display:grid; grid-template-columns:1fr 90px 30px 52px; gap:6px; align-items:center; font-size:.82rem; margin:6px 0; } .mu small { text-align:left; }
+.bug .ab { white-space:nowrap; } .pball { font-style:normal; font-size:.7rem; margin-left:3px; }
+.fbdefrow .seg { gap:4px; } .fbdefrow .seg span { padding:4px 8px; font-size:.78rem; min-height:30px; line-height:20px; }
+.mu span { line-height:1.15; }

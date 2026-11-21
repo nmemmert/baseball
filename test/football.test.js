@@ -111,3 +111,35 @@ test('teams have full rosters and sensible unit ratings', () => {
   const u = units(t);
   for (const v of Object.values(u)) assert.ok(v > 30 && v < 97);
 });
+
+import { createFbLeague, nextFbGame, completeFbDay, simFbToEnd, simFbUserGame, fbStandings, fbLeaders, newFbSeason, FB_GAMES, fbUser } from '../src/fbleague.js';
+import { startFbGame as sfg, fbAutoPlay as fap } from '../src/football.js';
+import { attachRng } from '../src/engine.js';
+
+test('football season: schedule, playoffs, champion, stats, new season', () => {
+  const lg = createFbLeague(5);
+  assert.equal(lg.schedule.length, FB_GAMES);
+  for (const day of lg.schedule) assert.equal(new Set(day.flat()).size, 8);
+  const opp = new Set();
+  for (const day of lg.schedule) { const g = day.find(([h, a]) => h === 0 || a === 0); opp.add(g[0] === 0 ? g[1] : g[0]); }
+  assert.equal(opp.size, 7);
+  simFbToEnd(lg);
+  assert.equal(lg.phase, 'done');
+  for (const t of lg.teams) assert.equal(t.w + t.l + t.t, FB_GAMES);
+  assert.ok(fbLeaders(lg).pass.length);
+  assert.equal(lg.history.length, 1);
+  newFbSeason(lg);
+  assert.equal(lg.day, 0); assert.equal(fbUser(lg).w, 0);
+});
+
+test('a user-played football game records and the league saves/loads', () => {
+  const lg = createFbLeague(6), ng = nextFbGame(lg);
+  const g = sfg(ng.home, ng.away, { seed: 3 });
+  fap(g);
+  completeFbDay(lg, g);
+  const r = unpack(pack({ lg, g }));
+  attachRng(r.lg);
+  assert.equal(r.lg.day, 1);
+  simFbToEnd(r.lg);
+  assert.equal(r.lg.phase, 'done');
+});

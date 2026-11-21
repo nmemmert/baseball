@@ -7,12 +7,15 @@ import * as L from './league.js';
 import { saveRaw, loadRaw, clearSave } from './store.js';
 import { advise, stars, todo } from './coach.js';
 import { createCam } from './cam.js';
-import { introHtml, startHtml, guideHtml, TUTORIAL } from './screens.js';
+import { introHtml, startHtml, guideHtml, sportHtml, TUTORIAL } from './screens.js';
+import { createFootball } from './fbui.js';
+import { createFbCam } from './fbcam.js';
 import { fx, react, prefs, initHaptics } from './feedback.js';
 
 const DEFAULTS = {
   sound: true, haptics: true, level: 1, theme: 'auto', text: 0, cvd: false, speed: 'normal', autoNext: false, autoLineup: false, seenTips: true, visuals: 'full', coach: true, introSeen: false, tutDone: false,
   pause: { tired: true, scoring: true, late: true, loaded: false },
+  sport: 'baseball', fbPause: { fourth: true, redzone: false, twominute: true, score: true }, fbTutDone: false,
 };
 const app = { settings: structuredClone(DEFAULTS), tab: 'game', lg: null, g: null, kind: null, daily: {}, auto: false, skipTok: -1, off: null, screen: null, prevScreen: null, introStep: 0, tut: null, sugg: [], snap: null, savedG: null, savedKind: null };
 const ui = {
@@ -25,7 +28,7 @@ let autoTimer = null;
 // ---------- persistence & preferences ----------
 function persist() {
   const tut = app.kind === 'tutorial';
-  saveRaw(pack({ lg: app.lg, g: tut ? app.savedG : app.g, kind: tut ? app.savedKind : app.kind, settings: app.settings, daily: app.daily }));
+  saveRaw(pack({ lg: app.lg, g: tut ? app.savedG : app.g, kind: tut ? app.savedKind : app.kind, settings: app.settings, daily: app.daily, fb: FB.snapshot() }));
 }
 function applyPrefs() {
   const s = app.settings, el = document.documentElement;
@@ -39,19 +42,20 @@ function boot() {
     try {
       const s = unpack(raw);
       app.lg = s.lg; app.g = s.g; app.kind = s.kind; app.daily = s.daily || {};
-      app.settings = { ...structuredClone(DEFAULTS), ...s.settings, pause: { ...DEFAULTS.pause, ...(s.settings && s.settings.pause) } };
+      app.settings = { ...structuredClone(DEFAULTS), ...s.settings, pause: { ...DEFAULTS.pause, ...(s.settings && s.settings.pause) }, fbPause: { ...DEFAULTS.fbPause, ...(s.settings && s.settings.fbPause) } };
       attachRng(app.lg); reviveGame(app.g);
       if (app.g) { app.g.wp ||= [0.5]; app.g.pa.locs ||= []; }
       app.lg.fa ||= [];
+      FB.restore(s.fb);
     } catch { app.lg = null; app.g = null; app.kind = null; }
   }
   if (!app.lg) app.lg = L.createLeague();
   applyPrefs();
-  app.screen = app.settings.introSeen ? 'start' : 'intro';
+  app.screen = app.settings.introSeen ? 'sport' : 'intro';
   if (app.g) cam.update(app.g);
   const m = /seed=(\d+)/.exec(location.hash);
   if (m) {
-    if (!app.g || app.g.over || app.kind === 'exhibit') { app.settings.introSeen = true; startExhibition(Number(m[1])); }
+    if (!app.g || app.g.over || app.kind === 'exhibit') { app.settings.introSeen = true; app.settings.sport = 'baseball'; startExhibition(Number(m[1])); }
     else toast('Finish your current season game to open the shared game.');
     history.replaceState(null, '', location.pathname);
   }
@@ -607,6 +611,7 @@ function renderStats() {
 
 // ---------- rendering: more ----------
 function renderMore() {
+  if (isFb()) return renderMoreFb();
   const s = app.settings, g = app.g, d = app.daily;
   const exSeed = g && app.kind === 'exhibit' && !g.daily ? g.seed : null;
   const today = d.date === todayKey();
@@ -640,10 +645,47 @@ function renderBar() {
   document.body.classList.toggle('nobar', !h);
 }
 
+const isFb = () => app.settings.sport === 'football';
+
+function renderFb() {
+  const t = app.tab;
+  $('top').innerHTML = FB.topHtml();
+  for (const b of document.querySelectorAll('#nav button')) {
+    b.classList.toggle('on', b.dataset.tab === t);
+    if (b.dataset.tab === 'game') b.querySelector('i').textContent = '🏈';
+    if (b.dataset.tab === 'lineup') b.querySelector('span').textContent = 'Roster';
+  }
+  $('view').innerHTML = t === 'more' ? renderMoreFb() : FB.render(t);
+  document.body.classList.toggle('ingame', t === 'game' && FB.hasGame());
+  const bar = t === 'game' ? FB.renderBar() : '';
+  $('bar').innerHTML = bar; document.body.classList.toggle('nobar', !bar);
+  FB.mount(); renderScreen();
+}
+
+function renderMoreFb() {
+  const s = app.settings;
+  return `${fold('m_mgr', 'Coach &amp; auto mode', `
+      <div class="group"><span class="label">Opposing coach</span>${seg('level', String(s.level), [['0', 'Rookie'], ['1', 'Pro'], ['2', 'All-Star']])}<div class="hint">Applies to your next game. Rookies punt too much and never go for two; All-Stars use analytics on 4th down.</div></div>
+      <div class="group"><span class="label">Auto-play speed</span>${seg('speed', s.speed, [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast'], ['instant', 'Instant']])}</div>
+      <div class="group"><span class="label">Pause auto mode for…</span><div>${chk('fbpause:fourth', s.fbPause.fourth, '4th downs', false)}${chk('fbpause:redzone', s.fbPause.redzone, 'Red zone', false)}${chk('fbpause:twominute', s.fbPause.twominute, 'Two-minute drill', false)}${chk('fbpause:score', s.fbPause.score, 'After touchdowns', false)}</div></div>`, true)}
+    ${fold('m_disp', 'Display &amp; accessibility', `
+      <div class="group"><span class="label">Theme</span>${seg('theme', s.theme, [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']])}</div>
+      <div class="group"><span class="label">Text size</span>${seg('text', String(s.text), [['0', 'Normal'], ['1', 'Large'], ['2', 'Larger']])}</div>
+      <div class="group"><span class="label">Field animations</span>${seg('visuals', s.visuals, [['full', 'Full'], ['quick', 'Quick'], ['off', 'Off']])}</div>
+      <div class="group">${chk('coach', s.coach, 'Show the coach’s suggestions', false)}${chk('sound', s.sound, 'Sound effects', false)}${chk('haptics', s.haptics, 'Haptics', false)}</div>`)}
+    ${fold('m_exh', 'Exhibition', `<p class="mute">A one-off game with a random matchup.</p><div class="row"><button data-act="fbexhibit">New exhibition game</button></div>`)}
+    ${fold('m_help', 'Help &amp; data', `<div class="row"><button data-act="guide">📖 How to play</button><button data-act="starttut">🎓 Tutorial</button><button data-act="title">🏠 Title screen</button><button class="ghost" data-act="fbreset">Reset football progress</button></div>`, true)}`;
+}
+
 function render() {
+  if (isFb()) { renderFb(); return; }
   const t = L.userTeam(app.lg), st = L.standings(app.lg), rank = st.indexOf(t) + 1;
   $('top').innerHTML = `<h1 data-act="title">SKIP<b>PER</b></h1><small>${t.name} · ${t.w}-${t.l}${app.lg.phase === 'regular' ? ` · ${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'}` : app.lg.phase === 'playoffs' ? ' · playoffs' : ''}</small>`;
-  for (const b of document.querySelectorAll('#nav button')) b.classList.toggle('on', b.dataset.tab === app.tab);
+  for (const b of document.querySelectorAll('#nav button')) {
+    b.classList.toggle('on', b.dataset.tab === app.tab);
+    if (b.dataset.tab === 'game') b.querySelector('i').textContent = '⚾';
+    if (b.dataset.tab === 'lineup') b.querySelector('span').textContent = 'Lineup';
+  }
   const views = { game: renderGame, lineup: renderLineup, season: renderSeason, stats: renderStats, more: renderMore };
   $('view').innerHTML = views[app.tab]();
   const slot = $('camslot');
@@ -657,15 +699,21 @@ function render() {
 // ---------- title / intro / guide screens ----------
 function renderScreen() {
   const box = $('screen');
-  box.className = app.screen === 'start' ? 'dark' : '';
+  box.className = app.screen === 'start' || app.screen === 'sport' ? 'dark' : '';
   if (!app.screen) { box.innerHTML = ''; return; }
   const t = L.userTeam(app.lg);
   if (app.screen === 'intro') box.innerHTML = introHtml(app.introStep, { city: t.city, nick: t.nick });
-  else if (app.screen === 'guide') box.innerHTML = guideHtml(0);
-  else {
+  else if (app.screen === 'guide') box.innerHTML = guideHtml(0, isFb() ? 'fb' : 'bb');
+  else if (app.screen === 'sport') {
+    const inSeason = app.lg.day > 0 || app.lg.history.length > 0 || app.lg.phase !== 'regular';
+    box.innerHTML = sportHtml({ bb: app.g ? 'Game in progress' : inSeason ? `Season ${app.lg.season} · ${t.w}-${t.l}` : 'New season', fb: FB.status().short });
+  } else if (isFb()) {
+    const st = FB.status();
+    box.innerHTML = startHtml({ cont: st.cont, label: st.cont ? st.label : 'Start season', hasDaily: false, dailyDone: false, fb: true });
+  } else {
     const inSeason = app.lg.day > 0 || app.lg.history.length > 0 || app.lg.phase !== 'regular';
     const label = app.g ? `${app.kind === 'tutorial' ? 'Tutorial' : app.kind === 'exhibit' ? 'Exhibition' : `Season ${app.lg.season}`} · game in progress` : inSeason ? `Season ${app.lg.season} · ${t.w}-${t.l}` : 'Start season';
-    box.innerHTML = startHtml({ cont: !!app.g || inSeason, label: app.g || inSeason ? label : 'Start season', hasDaily: true, dailyDone: app.daily.date === todayKey() });
+    box.innerHTML = startHtml({ cont: !!app.g || inSeason, label: app.g || inSeason ? label : 'Start season', hasDaily: true, dailyDone: app.daily.date === todayKey(), fb: false });
   }
 }
 function closeScreen() { app.screen = app.prevScreen && app.screen === 'guide' ? app.prevScreen : null; app.prevScreen = null; render(); }
@@ -675,8 +723,8 @@ function finishIntro(withTut) {
   if (city && city.trim()) t.city = city.trim();
   if (nick && nick.trim()) t.nick = nick.trim();
   t.name = `${t.city} ${t.nick}`;
-  app.settings.introSeen = true; app.screen = null; persist();
-  if (withTut) startTutorial(); else { app.tab = 'game'; render(); }
+  app.settings.introSeen = true; persist();
+  if (withTut) { app.settings.sport = 'baseball'; app.screen = null; startTutorial(); } else { app.screen = 'sport'; render(); }
 }
 
 // ---------- tutorial ----------
@@ -848,6 +896,7 @@ document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const g = app.g, id = Number(el.dataset.id), d = el.dataset;
+  if (d.act.startsWith('fb') && FB.click(d.act, d)) return;
   switch (d.act) {
     case 'card': showCard(d.uid); return;
     case 'closecard': closeDialog(); return;
@@ -855,10 +904,13 @@ document.addEventListener('click', (e) => {
     case 'closescreen': closeScreen(); return;
     case 'guide': openGuide(); return;
     case 'startguide': openGuide(); return;
-    case 'startcontinue': app.screen = null; app.tab = app.g ? 'game' : (app.lg.day > 0 || app.lg.history.length ? 'season' : 'game'); render(); return;
-    case 'startexhibit': startExhibition(); return;
+    case 'pickbaseball': app.settings.sport = 'baseball'; app.screen = 'start'; persist(); render(); return;
+    case 'pickfootball': app.settings.sport = 'football'; app.screen = 'start'; persist(); render(); return;
+    case 'changesport': app.screen = 'sport'; render(); return;
+    case 'startcontinue': if (isFb()) { app.screen = null; app.tab = FB.hasGame() ? 'game' : (FB.status().cont ? 'season' : 'game'); render(); return; } app.screen = null; app.tab = app.g ? 'game' : (app.lg.day > 0 || app.lg.history.length ? 'season' : 'game'); render(); return;
+    case 'startexhibit': if (isFb()) { app.screen = null; FB.newExhibition(); return; } startExhibition(); return;
     case 'startdaily': startDaily(); return;
-    case 'starttut': startTutorial(); return;
+    case 'starttut': if (isFb()) { FB.startTutorial(); return; } startTutorial(); return;
     case 'introopen': app.introStep = 0; app.screen = 'intro'; render(); return;
     case 'intro': app.introStep = Number(d.i); render(); return;
     case 'introskip': finishIntro(false); return;
@@ -907,6 +959,7 @@ document.addEventListener('click', (e) => {
 
 const SETTING_SET = { level: Number, speed: String, theme: String, text: Number, visuals: String };
 document.addEventListener('change', (e) => {
+  if (FB.change(e)) return;
   const s = e.target.dataset;
   if (s.set && s.set in SETTING_SET) { app.settings[s.set] = SETTING_SET[s.set](e.target.value); applyPrefs(); persist(); render(); return; }
   if (s.set === 'tradeTeam') { ui.tradeTeam = Number(e.target.value); ui.tMine = ui.tTheirs = null; render(); return; }
@@ -927,7 +980,15 @@ document.addEventListener('change', (e) => {
 document.addEventListener('toggle', (e) => { const k = e.target.dataset && e.target.dataset.fold; if (k) ui.open[k] = e.target.open; }, true);
 $('card').addEventListener('click', (e) => { if (e.target === $('card')) closeDialog(); });
 
+const FB = createFootball({
+  $, seg, chk, fold, fx, teamCol,
+  settings: () => app.settings, persist: () => persist(), render: () => render(), toast: (m) => toast(m),
+  openDialog: (h) => openDialog(h), closeDialog: () => closeDialog(), confirm: (m) => confirm(m),
+  tab: () => app.tab, setTab: (t) => { app.tab = t; }, closeScreen: () => { app.screen = null; app.prevScreen = null; },
+  makeCam: () => createFbCam({ teamCol }),
+});
+
 boot();
-if (app.g && !app.g.over) app.tab = 'game';
+if (!isFb() && app.g && !app.g.over) app.tab = 'game';
 render();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
