@@ -59,6 +59,11 @@ function renderField() {
 const seg = (name, cur, opts) => `<div class="seg">${opts.map(([v, t]) => `<label><input type="radio" name="${name}" value="${v}" ${cur === v ? 'checked' : ''} data-set="${name}"><span>${t}</span></label>`).join('')}</div>`;
 const chk = (name, on, text, disabled) => `<label class="chk"><input type="checkbox" data-toggle="${name}" ${on ? 'checked' : ''} ${disabled ? 'disabled' : ''}> ${text}</label>`;
 
+function renderBar() {
+  $('bar').innerHTML = g.over ? '<button class="primary" id="again">New game</button>' : '<button class="primary" data-action="play">Next batter ▶</button>';
+  const again = $('again'); if (again) again.onclick = start;
+}
+
 function renderOrders() {
   if (g.over) { $('orders').innerHTML = `<div class="over">${g.winner === 'home' ? 'Victory!' : 'Defeat.'}<br>${g.away.name} ${g.away.runs}, ${g.home.name} ${g.home.runs}</div>`; return; }
   const [b1, b2] = g.bases;
@@ -72,7 +77,7 @@ function renderOrders() {
       <div class="group"><span class="label">Pitching approach</span>${seg('approach', ui.approach, [['nibble', 'Nibble corners'], ['normal', 'Normal'], ['attack', 'Attack the zone']])}</div>
       <div class="group">${chk('ibb', ui.ibb, 'Intentional walk', false)}${chk('infieldIn', ui.infieldIn, 'Infield in', !g.bases[2])}</div>`;
   }
-  $('orders').innerHTML = `${html}<div class="row"><button class="primary" data-action="play">Next batter ▶</button><small>The players do the playing. You make the calls.</small></div>`;
+  $('orders').innerHTML = html;
 }
 
 function renderRoster() {
@@ -99,7 +104,7 @@ function renderLog() {
   $('log').innerHTML = `<h2>Play by play</h2><div class="log">${lines.map((l, i) => `<p class="${i < first ? 'new' : ''}">${l}</p>`).join('')}</div>`;
 }
 
-function render() { renderScore(); renderField(); renderOrders(); renderRoster(); renderLog(); }
+function render() { renderScore(); renderField(); renderOrders(); renderBar(); renderRoster(); renderLog(); }
 
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
@@ -121,3 +126,5 @@ document.addEventListener('change', (e) => {
 });
 $('new').addEventListener('click', start);
 start();
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
