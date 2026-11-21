@@ -3,32 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#10261a">
+  <meta name="theme-color" content="#06142c">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Skipper">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Skipper — Baseball Manager</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
-  <title>Skipper — Baseball Manager</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header><h1>Skipper</h1><span class="sub">You manage the Harbor City Skippers. Every pitch is someone else's job.</span>
-    <button id="new">New game</button></header>
-  <main>
-    <section id="scoreboard"></section>
-    <div class="cols">
-      <section id="field"></section>
-      <section id="orders"></section>
-    </div>
-    <div class="cols">
-      <section id="roster"></section>
-      <section id="log"></section>
-    </div>
-  </main>
+  <header id="top"></header>
+  <main id="view"></main>
   <div id="bar"></div>
+  <nav id="nav">
+    <button data-tab="game"><i>⚾</i><span>Game</span></button>
+    <button data-tab="lineup"><i>📋</i><span>Lineup</span></button>
+    <button data-tab="season"><i>📅</i><span>Season</span></button>
+    <button data-tab="stats"><i>📊</i><span>Stats</span></button>
+    <button data-tab="more"><i>⚙️</i><span>More</span></button>
+  </nav>
+  <div id="toast" role="status"></div>
+  <dialog id="card"></dialog>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>
