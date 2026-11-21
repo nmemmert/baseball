@@ -99,7 +99,7 @@ export function newGame(seed = Date.now() % 1e9, level = 1) {
 export function startGame(home, away, { seed = 1, level = 1, exhibition = null, user = null } = {}) {
   const g = attachRng({
     rs: seed | 0, seed: exhibition ?? seed, home, away, level, user, inning: 1, half: 'top', outs: 0, bases: [null, null, null],
-    over: false, winner: null, log: [], paCount: 0, pa: { balls: 0, strikes: 0, pitches: 0, seq: [] }, last: null,
+    over: false, winner: null, log: [], paCount: 0, pa: freshPA(), last: null, lastPA: null, wp: [0.5],
   });
   beginTeamGame(home); beginTeamGame(away);
   return g;
@@ -129,6 +129,34 @@ function effPitcher(p) {
 export const formTag = (p) => (p.form >= 3 ? 'hot' : p.form <= -3 ? 'cold' : '');
 
 const say = (g, msg) => g.log.push(msg);
+const freshPA = () => ({ balls: 0, strikes: 0, pitches: 0, seq: [], locs: [] });
+
+// ---------- Cosmetic pitch data (derived by hash, never touches the sim's RNG stream) ----------
+const hrand = (a, b, c) => {
+  let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263) + Math.imul(c | 0, 2147483647)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+};
+const PITCHES = { FF: ['Four-Seam', 6], SI: ['Sinker', 4], FC: ['Cutter', 2], SL: ['Slider', -4], CU: ['Curveball', -9], CH: ['Changeup', -7] };
+export function repertoire(p) {
+  const first = p.id % 2 ? 'FF' : 'SI', rest = ['SL', 'CU', 'CH', 'FC'], a = rest[p.id % 4], b = rest[(p.id >> 2) % 4 === p.id % 4 ? (p.id % 4 + 1) % 4 : (p.id >> 2) % 4];
+  return [first, a, b].map((c) => ({ code: c, name: PITCHES[c][0], off: PITCHES[c][1] }));
+}
+function pitchMeta(g, pit, k, n) {
+  const r = (c) => hrand(g.seed, g.paCount * 131 + g.inning, n * 7 + c);
+  const types = repertoire(pit), t = types[Math.min(types.length - 1, Math.floor(r(1) * types.length))];
+  const v = Math.round(86 + (pit.stuff - 40) / 6 + t.off + (pit.role === 'SP' ? 0 : 2) + (r(2) - 0.5) * 3 - fatigue(pit) * 2);
+  let x, y;
+  const ring = (lo, hi) => { const a = r(3) * 6.2832, d = lo + (hi - lo) * r(4); return [Math.cos(a) * d, Math.sin(a) * d]; };
+  if (k.kind === 'ball') [x, y] = ring(1.12, 1.9);
+  else if (k.kind === 'called') { x = (r(3) < 0.5 ? -1 : 1) * (0.55 + 0.4 * r(4)); y = (r(5) * 2 - 1) * 0.95; if (r(6) < 0.4) { [x, y] = [y, x]; } }
+  else if (k.kind === 'whiff') { x = (r(3) * 2 - 1) * 1.1; y = -0.55 - 0.55 * r(4); }
+  else if (k.kind === 'foul') { x = (r(3) * 2 - 1) * 1.1; y = (r(4) * 2 - 1) * 1.0; }
+  else if (k.kind === 'hbp') { x = (r(3) < 0.5 ? -1 : 1) * 1.25; y = (r(4) * 2 - 1) * 0.6; }
+  else if (k.inZone === false) [x, y] = ring(1.05, 1.3);
+  else { x = (r(3) * 2 - 1) * 0.8; y = (r(4) * 2 - 1) * 0.8; }
+  return { k: k.kind, t: t.code, tn: t.name, v, x: +x.toFixed(2), y: +y.toFixed(2) };
+}
 
 // ---------- Win probability (home team) ----------
 const RE = [
@@ -320,7 +348,8 @@ function pitchKind(g, B, P, off, def) {
 function closePA(g, ev, result) {
   const bat = battingTeam(g);
   ev.result = result;
-  g.pa = { balls: 0, strikes: 0, pitches: 0, seq: [] };
+  g.lastPA = { locs: g.pa.locs, batter: bat.lineup[bat.batIdx].name, result };
+  g.pa = freshPA();
   bat.batIdx = (bat.batIdx + 1) % 9;
   if (g.half === 'bot' && g.inning >= 9 && g.home.runs > g.away.runs) {
     g.over = true; g.winner = 'home';
@@ -334,7 +363,7 @@ function endHalf(g) {
   const bat = battingTeam(g);
   bat.inningRuns[g.inning - 1] = bat.inningRuns[g.inning - 1] || 0;
   g.outs = 0; g.bases = [null, null, null];
-  g.pa = { balls: 0, strikes: 0, pitches: 0, seq: [] };
+  g.pa = freshPA();
   if (g.half === 'top') {
     if (g.inning >= 9 && g.home.runs > g.away.runs) {
       g.over = true; g.winner = 'home';
@@ -366,7 +395,11 @@ export function pitch(g, orders = {}) {
   const rng = g.rng, pa = g.pa, r0 = bat.runs;
   const ev = { kind: null, result: null, runs: 0, steal: null };
   g.last = ev;
-  const finish = () => { ev.runs = bat.runs - r0; return ev; };
+  const finish = () => {
+    ev.runs = bat.runs - r0;
+    if (g.pa.pitches === 0) { g.wp.push(Math.round(winProb(g) * 1000) / 1000); if (g.wp.length > 140) g.wp.shift(); }
+    return ev;
+  };
   if (pa.pitches === 0) g.paCount++;
   pa.pitches++;
 
@@ -397,6 +430,7 @@ export function pitch(g, orders = {}) {
     else if (r < 0.2) k = { kind: 'whiff', inZone: true, bunt: true };
     else {
       pa.seq.push('X');
+      ev.pitch = pitchMeta(g, pit, { kind: 'inplay', inZone: true }, pa.pitches); pa.locs.push(ev.pitch);
       bunt(g, batter);
       closePA(g, ev, 'BUNT');
       ev.kind = 'inplay';
@@ -404,6 +438,7 @@ export function pitch(g, orders = {}) {
     }
   } else k = pitchKind(g, B, P, off, def);
   ev.kind = k.kind;
+  ev.pitch = pitchMeta(g, pit, k, pa.pitches); pa.locs.push(ev.pitch);
 
   if (k.kind === 'hbp') {
     pa.seq.push('H');

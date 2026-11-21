@@ -7,7 +7,7 @@ import { saveRaw, loadRaw, clearSave } from './store.js';
 import { fx, react, prefs, initHaptics } from './feedback.js';
 
 const app = { settings: { sound: true, haptics: true, level: 1 }, tab: 'game', lg: null, g: null, kind: null };
-const ui = { swing: 'normal', approach: 'normal', call: '', shift: false, infieldIn: false, depth: 'normal', box: false, sel: null, newsOpen: false };
+const ui = { swing: 'normal', approach: 'normal', call: '', shift: false, infieldIn: false, depth: 'normal', box: false, sel: null, sub: 'field' };
 const $ = (id) => document.getElementById(id);
 const LEVELS = ['Rookie', 'Pro', 'All-Star'];
 
@@ -20,6 +20,7 @@ function boot() {
       const s = unpack(raw);
       Object.assign(app, { lg: s.lg, g: s.g, kind: s.kind, settings: { ...app.settings, ...s.settings } });
       attachRng(app.lg); reviveGame(app.g);
+      if (app.g) { app.g.wp ||= [0.5]; app.g.pa.locs ||= []; }
     } catch { app.lg = null; app.g = null; app.kind = null; }
   }
   if (!app.lg) app.lg = L.createLeague();
@@ -70,7 +71,7 @@ const pitLine = (s) => `${ip(s)} IP, ${s.h} H, ${s.r} R, ${s.bb} BB, ${s.k} K ($
 const restLabel = (p) => (p.debt > 0.55 ? 'gassed' : p.debt > 0.2 ? 'tired' : 'rested');
 
 // ---------- game flow ----------
-function resetCalls() { Object.assign(ui, { swing: 'normal', approach: 'normal', call: '', shift: false, infieldIn: false, depth: 'normal' }); }
+function resetCalls() { Object.assign(ui, { swing: 'normal', approach: 'normal', call: '', shift: false, infieldIn: false, depth: 'normal', sub: 'field' }); }
 
 function startSeasonGame() {
   const ng = L.nextGame(app.lg);
@@ -85,7 +86,7 @@ function startExhibition(seed) {
   const s = seed || Math.floor(100000 + Math.random() * 899999);
   app.g = newGame(s, app.settings.level); app.g.user = app.g.home; app.kind = 'exhibit';
   resetCalls(); app.tab = 'game';
-  app.g.log.push(`Exhibition #${s}. You manage ${app.g.home.name}. Play ball!`);
+  ui.sub = 'field'; app.g.log.push(`Exhibition #${s}. You manage ${app.g.home.name}. Play ball!`);
   persist(); render();
 }
 
@@ -160,6 +161,22 @@ function finishGame() {
 }
 
 // ---------- rendering: game ----------
+const hue = (str) => { let h = 0; for (const c of str) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+const teamCol = (t) => `hsl(${hue(t.nick)} 62% 46%)`;
+const initials = (n) => n.split(' ').map((x) => x[0]).join('').slice(0, 2);
+const avatar = (p, t) => `<span class="av" style="background:${teamCol(t)}">${initials(p.name)}</span>`;
+const PDESC = { ball: 'Ball', called: 'Called strike', whiff: 'Swinging strike', foul: 'Foul', inplay: 'In play', hbp: 'Hit by pitch' };
+const PCLS = { ball: 'ball', called: 'strike', whiff: 'strike', foul: 'strike', inplay: 'inplay', hbp: 'hbp' };
+
+function scorebug() {
+  const g = app.g, a = g.away, h = g.home;
+  const mid = g.over ? '<div class="inn fin">FINAL</div>' : `<div class="inn">${g.half === 'top' ? '▲' : '▼'} ${g.inning}</div><small>${g.outs} out</small>`;
+  return `<div class="bug">
+    <div class="side ${a === mine() ? 'me' : ''}"><i class="chip" style="background:${teamCol(a)}"></i><div class="ab">${abbr(a)}<small>${a.hits} H</small></div><span class="runs">${a.runs}</span></div>
+    <div class="mid">${mid}</div>
+    <div class="side r ${h === mine() ? 'me' : ''}"><span class="runs">${h.runs}</span><div class="ab">${abbr(h)}<small>${h.hits} H</small></div><i class="chip" style="background:${teamCol(h)}"></i></div></div>`;
+}
+
 function lineScore() {
   const g = app.g, n = Math.max(9, g.inning);
   const head = Array.from({ length: n }, (_, i) => `<th>${i + 1}</th>`).join('');
@@ -174,31 +191,64 @@ function lineScore() {
   return `<div class="scroll"><table><tr><th></th>${head}<th>R</th><th>H</th></tr>${row(g.away, true)}${row(g.home, false)}</table></div>`;
 }
 
-function fieldSvg() {
+function diamondSvg() {
   const g = app.g;
-  const base = (i, x, y) => `<rect x="${x - 12}" y="${y - 12}" width="24" height="24" transform="rotate(45 ${x} ${y})" fill="${g.bases[i] ? '#f2c14e' : '#0c1d13'}" stroke="#9db8a5"/>`;
+  const base = (i, x, y) => `<rect x="${x - 11}" y="${y - 11}" width="22" height="22" rx="2" transform="rotate(45 ${x} ${y})" fill="${g.bases[i] ? '#ffb703' : '#0a1d3e'}" stroke="${g.bases[i] ? '#ffd166' : '#46608f'}" stroke-width="1.5"/>`;
   const nm = g.bases.map((r) => (r ? r.name.split(' ').slice(-1)[0] : ''));
-  const t = (x, y, s) => `<text x="${x}" y="${y}" fill="#eef3ea" font-size="11" text-anchor="middle">${s}</text>`;
-  return `<svg viewBox="0 0 280 190"><path d="M140 175 L40 95 L140 15 L240 95 Z" fill="#1f4d2f" stroke="#2b5a3c"/>${base(0, 200, 100)}${base(1, 140, 40)}${base(2, 80, 100)}<path d="M140 175 l-10 -10 l10 -10 l10 10 z" fill="#eef3ea"/>${t(200, 128, nm[0])}${t(140, 24, nm[1])}${t(80, 128, nm[2])}</svg>`;
+  const t = (x, y, s) => `<text x="${x}" y="${y}" fill="#f3f6fb" font-size="10" text-anchor="middle">${s}</text>`;
+  return `<svg viewBox="0 0 200 170" role="img" aria-label="Bases"><path d="M100 150 L25 80 L100 10 L175 80 Z" fill="#14407c" fill-opacity=".45" stroke="#1f3d70"/>
+    <path d="M100 150 L25 80 M100 150 L175 80" stroke="#2a5aa0" stroke-width="1"/>${base(0, 150, 80)}${base(1, 100, 38)}${base(2, 50, 80)}
+    <path d="M100 160 l-9 -8 l0 -7 l18 0 l0 7 z" fill="#f3f6fb"/>${t(150, 104, nm[0])}${t(100, 20, nm[1])}${t(50, 104, nm[2])}</svg>`;
 }
 
-const dots = (n, max, cls) => `<span class="dots">${Array.from({ length: max }, (_, i) => `<i class="dot ${cls} ${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
-const SEQ = { B: 'B', C: 'K', S: 'S', F: 'F', X: '●', H: 'HBP', '-': '' };
+function trackerSvg(locs, faded) {
+  const X = (x) => Math.max(14, Math.min(186, 100 + x * 50)), Y = (y) => Math.max(14, Math.min(214, 112 - y * 50));
+  const dotsSvg = locs.map((l, i) => {
+    const col = { ball: '#3ddc84', strike: '#ff3b5c', inplay: '#4aa8ff', hbp: '#ffb703' }[PCLS[l.k]];
+    const last = !faded && i === locs.length - 1;
+    return `<g opacity="${faded ? 0.5 : 1}"><circle cx="${X(l.x)}" cy="${Y(l.y)}" r="10" fill="${col}" ${last ? 'stroke="#fff" stroke-width="2.5"' : ''}/><text x="${X(l.x)}" y="${Y(l.y) + 4}" font-size="11" font-weight="800" text-anchor="middle" fill="${PCLS[l.k] === 'strike' ? '#fff' : '#06142c'}">${i + 1}</text></g>`;
+  }).join('');
+  return `<svg viewBox="0 0 200 230" role="img" aria-label="Pitch tracker">
+    <rect x="18" y="30" width="164" height="164" rx="8" fill="#0a1d3e" stroke="#1f3d70" stroke-dasharray="4 4"/>
+    <rect x="50" y="62" width="100" height="100" fill="#0f2f63" stroke="#8fa5c8" stroke-width="1.5"/>
+    <path d="M83 62 V162 M117 62 V162 M50 95 H150 M50 129 H150" stroke="#2a5aa0" stroke-width=".8"/>
+    <path d="M70 208 h60 l-8 10 h-44 z" fill="#f3f6fb" opacity=".9"/>${dotsSvg}</svg>`;
+}
 
-function matchup() {
-  const g = app.g, b = currentBatter(g), team = fieldingTeam(g), p = team.pitcher, f = fatigue(p);
-  const wpHome = winProb(g), wp = g.home === mine() ? wpHome : 1 - wpHome;
-  const ctx = `${g.over ? 'Final' : `${g.half === 'top' ? 'Top' : 'Bottom'} ${g.inning}`}`;
-  return `<h2>${ctx}</h2>
-    <div class="row"><span class="label">Your win chance</span><div class="wp"><i style="width:${(wp * 100).toFixed(0)}%"></i></div><b>${Math.round(wp * 100)}%</b></div>
-    ${fieldSvg()}
-    <div class="count"><span>B ${dots(g.pa.balls, 3, 'b')}</span><span>S ${dots(g.pa.strikes, 2, 's')}</span><span>O ${dots(g.outs, 2, 'o')}</span></div>
-    <div class="seq">${g.pa.seq.map((c) => SEQ[c]).join(' ') || '&nbsp;'}</div>
-    <div class="row"><span class="label">At bat</span> ${pl(b, p)}<small>${b.pos} · bats ${b.hand} · ${ratings(b)}</small></div>
-    <div class="row"><small>Today: ${batLine(b.stats)} · On deck: ${onDeck(g).name}</small></div>
-    <div class="row"><span class="label">Pitching</span> ${pl(p)}<small>throws ${p.hand} · ${ratings(p)}</small></div>
-    <div class="row"><small>${pitLine(p.stats)}</small></div>
-    <div class="row"><span class="label">Arm</span><div class="meter ${f > 0.5 ? 'hot' : ''}"><i style="width:${Math.min(100, (p.stats.pitches / (p.stamina * (1 - 0.45 * (p.debt || 0)) * 1.25)) * 100)}%"></i></div><small>${f > 0.6 ? 'gassed' : f > 0.2 ? 'tiring' : 'fresh'}${p.debt > 0.25 ? ' · started tired' : ''}</small></div>`;
+function sparkline() {
+  const g = app.g, mineHome = g.home === mine();
+  const pts = g.wp.map((w) => (mineHome ? w : 1 - w));
+  const W = 300, H = 54, n = Math.max(pts.length, 2);
+  const xy = pts.map((v, i) => `${((i / (n - 1)) * W).toFixed(1)},${(H - 4 - v * (H - 8)).toFixed(1)}`).join(' ');
+  const last = pts[pts.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke="#2a5aa0" stroke-dasharray="3 4"/>
+    <polyline points="${xy}" fill="none" stroke="${last >= 0.5 ? '#3ddc84' : '#ff3b5c'}" stroke-width="2.2" stroke-linejoin="round"/></svg>`;
+}
+
+function nowCard() {
+  const g = app.g, faded = g.pa.locs.length === 0 && !!g.lastPA, locs = g.pa.locs.length ? g.pa.locs : (g.lastPA ? g.lastPA.locs : []);
+  const rows = locs.map((l, i) => `<div class="p"><span class="pn ${PCLS[l.k]}">${i + 1}</span><span>${l.tn} <small>${l.v} mph</small></span><b>${PDESC[l.k]}</b></div>`).join('');
+  const dotsRow = (n, max, cls) => `<div class="dots">${Array.from({ length: max }, (_, i) => `<i class="dot ${cls} ${i < n ? 'on' : ''}"></i>`).join('')}</div>`;
+  const lastLine = [...g.log].reverse().find((l) => !l.startsWith('—')) || '';
+  const lp = lastLine ? `<div class="lastplay ${g.last && g.last.runs ? 'run' : ''}">${lastLine}</div>` : '';
+  const head = faded && g.lastPA ? `<small>Last at-bat: ${g.lastPA.batter}</small>` : '';
+  return `${head}<div class="now"><div>${trackerSvg(locs, faded)}</div>
+    <div>${diamondSvg()}<div class="countcol"><div>B${dotsRow(g.pa.balls, 3, 'b')}</div><div>S${dotsRow(g.pa.strikes, 2, 's')}</div><div>O${dotsRow(g.outs, 2, 'o')}</div></div></div></div>
+    <div class="pitches">${rows}</div>${lp}`;
+}
+
+function vsStrip() {
+  const g = app.g, bt = battingTeam(g), ft = fieldingTeam(g), b = currentBatter(g), p = ft.pitcher, f = fatigue(p);
+  return `<div class="vs">
+    <div><div class="role">Pitching</div><div class="who">${avatar(p, ft)}<div class="t"><b>${pl(p)}</b><small>${p.hand}HP · ${p.stats.pitches} pitches</small></div></div>
+      <small>${pitLine(p.stats)}</small><div class="row"><div class="meter ${f > 0.5 ? 'hot' : ''}"><i style="width:${Math.min(100, (p.stats.pitches / (p.stamina * (1 - 0.45 * (p.debt || 0)) * 1.25)) * 100)}%"></i></div><small>${f > 0.6 ? 'gassed' : f > 0.2 ? 'tiring' : 'fresh'}</small></div><small>${ratings(p)}</small></div>
+    <div><div class="role">At bat</div><div class="who">${avatar(b, bt)}<div class="t"><b>${pl(b, p)}</b><small>${b.pos} · bats ${b.hand}</small></div></div>
+      <small>Today: ${batLine(b.stats)}</small><div class="row"><small>On deck: ${onDeck(g).name}</small></div><small>${ratings(b)}</small></div></div>`;
+}
+
+function wpCard() {
+  const g = app.g, wpHome = winProb(g), wp = g.home === mine() ? wpHome : 1 - wpHome;
+  return `<div class="row" style="justify-content:space-between;margin-top:0"><h2 style="margin:0">Win probability</h2><b class="big" style="font-size:20px;color:${wp >= 0.5 ? 'var(--green)' : 'var(--strike)'}">${Math.round(wp * 100)}%</b></div>${sparkline()}`;
 }
 
 const seg = (name, cur, opts, dis = {}) => `<div class="seg">${opts.map(([v, t]) => `<label><input type="radio" name="${name}" value="${v}" ${cur === v ? 'checked' : ''} ${dis[v] ? 'disabled' : ''} data-set="${name}"><span>${t}</span></label>`).join('')}</div>`;
@@ -254,30 +304,37 @@ function boxScore() {
   const one = (t) => {
     const bats = [...t.lineup, ...t.usedBatters.filter((b) => !t.lineup.includes(b))];
     const ps = [...t.usedPitchers, t.pitcher];
-    return `<h3>${t.name}</h3><table>${bats.map((p) => `<tr><td>${p.name}</td><td>${p.pos}</td><td><small>${batLine(p.stats)}</small></td></tr>`).join('')}</table>
-      <table style="margin-top:6px">${ps.map((p) => `<tr><td>${p.name}</td><td><small>${pitLine(p.stats)}</small></td></tr>`).join('')}</table>`;
+    return `<section><h2>${t.name}</h2><table>${bats.map((p) => `<tr><td>${pl(p)}</td><td>${p.pos}</td><td><small>${batLine(p.stats)}</small></td></tr>`).join('')}</table>
+      <table style="margin-top:8px">${ps.map((p) => `<tr><td>${pl(p)}</td><td><small>${pitLine(p.stats)}</small></td></tr>`).join('')}</table></section>`;
   };
-  return `<details id="box" ${ui.box ? 'open' : ''}><summary>Box score</summary>${one(g.away)}${one(g.home)}</details>`;
+  return `<section>${lineScore()}</section>${one(g.away)}${one(g.home)}`;
 }
 
 function logPanel() {
   const g = app.g, fresh = g.log.length - (g.mark ?? g.log.length);
-  return `<h2>Play by play</h2><div class="log">${[...g.log].slice(-45).reverse().map((l, i) => `<p class="${i < fresh ? 'new' : ''}">${l}</p>`).join('')}</div>`;
+  const lines = [...g.log].slice(-80).reverse();
+  return `<section><h2>Play by play</h2><div class="log">${lines.map((l, i) => `<p class="${l.startsWith('—') ? 'sep' : i < fresh ? 'new' : ''}">${l}</p>`).join('')}</div></section>`;
 }
 
 function renderGame() {
   if (!app.g) {
     const ng = app.lg.phase === 'done' ? null : L.nextGame(app.lg);
     return `<section class="empty"><h2>No game in progress</h2>
-      <p>${ng ? `Next up: <b>${ng.away.nick} at ${ng.home.nick}</b> — ${ng.label}` : app.lg.phase === 'done' ? 'The season is over.' : 'Your team has no game today.'}</p>
+      <p>${ng ? `Next up: <b>${ng.away.nick} at ${ng.home.nick}</b><br>${ng.label}` : app.lg.phase === 'done' ? 'The season is over.' : 'Your team has no game today.'}</p>
       <div class="row">${ng ? '<button class="primary" data-act="playnext">Manage next game</button>' : ''}<button data-act="exhibit">Exhibition game</button></div>
       <p class="mute">Season games count in the standings. Exhibition games are one-offs you can share.</p></section>`;
   }
-  return `<section>${lineScore()}</section>
-    <div class="cols"><section>${matchup()}</section><section>${ordersPanel()}
-      ${app.g.over ? '' : `<div class="group"><span class="label">Autopilot</span><div class="row"><button class="sm" data-act="autohalf">Rest of half-inning</button><button class="sm" data-act="autogame">Finish game</button></div></div>`}</section></div>
-    <div class="cols"><section>${bench()}</section><section>${logPanel()}</section></div>
-    <section>${boxScore()}</section>`;
+  const subs = [['field', 'Gameday'], ['club', 'Club'], ['plays', 'Plays'], ['box', 'Box']];
+  const nav = `<div class="sub">${subs.map(([k, t]) => `<button data-act="sub" data-sub="${k}" class="${ui.sub === k ? 'on' : ''}">${t}</button>`).join('')}</div>`;
+  let body;
+  if (ui.sub === 'club') body = `<section>${bench()}</section>`;
+  else if (ui.sub === 'plays') body = logPanel();
+  else if (ui.sub === 'box') body = boxScore();
+  else {
+    body = `<section>${nowCard()}</section><section>${vsStrip()}</section><section>${wpCard()}</section>
+      <section>${ordersPanel()}${app.g.over ? '' : `<div class="group"><span class="label">Autopilot</span><div class="row"><button class="sm" data-act="autohalf">Rest of half-inning</button><button class="sm" data-act="autogame">Finish game</button></div></div>`}</section>`;
+  }
+  return `${scorebug()}${nav}${body}`;
 }
 
 // ---------- rendering: lineup ----------
@@ -357,13 +414,16 @@ function renderMore() {
 function renderBar() {
   const g = app.g, bar = $('bar');
   let h = '';
-  if (app.tab === 'game' && g) h = g.over ? '<button class="primary" data-act="finish">Finish game</button>' : '<button data-act="atbat">Auto at-bat</button><button class="primary" data-act="pitch1">Next pitch ▶</button>';
+  if (app.tab === 'game' && g && ui.sub === 'field') h = g.over ? '<button class="primary" data-act="finish">Finish game</button>' : '<button data-act="atbat">Auto at-bat</button><button class="primary" data-act="pitch1">Next pitch ▶</button>';
+  else if (app.tab === 'game' && g && g.over) h = '<button class="primary" data-act="finish">Finish game</button>';
   bar.innerHTML = h;
   document.body.classList.toggle('nobar', !h);
 }
 
 function render() {
-  for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === app.tab);
+  const t = L.userTeam(app.lg), st = L.standings(app.lg), rank = st.indexOf(t) + 1;
+  $('top').innerHTML = `<h1>SKIP<b>PER</b></h1><small>${t.name} · ${t.w}-${t.l}${app.lg.phase === 'regular' ? ` · ${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'}` : app.lg.phase === 'playoffs' ? ' · playoffs' : ''}</small>`;
+  for (const b of document.querySelectorAll('#nav button')) b.classList.toggle('on', b.dataset.tab === app.tab);
   const views = { game: renderGame, lineup: renderLineup, season: renderSeason, stats: renderStats, more: renderMore };
   $('view').innerHTML = views[app.tab]();
   renderBar();
@@ -410,6 +470,7 @@ document.addEventListener('click', (e) => {
   const g = app.g, id = Number(el.dataset.id);
   switch (el.dataset.act) {
     case 'card': showCard(el.dataset.uid); return;
+    case 'sub': ui.sub = el.dataset.sub; render(); window.scrollTo(0, 0); return;
     case 'closecard': $('card').close(); return;
     case 'pitch1': throwPitch(); return;
     case 'atbat': autoAtBat(); return;
@@ -444,7 +505,6 @@ document.addEventListener('change', (e) => {
   }
   if (s.toggle) { ui[s.toggle] = e.target.checked; render(); }
 });
-document.addEventListener('toggle', (e) => { if (e.target.id === 'box') ui.box = e.target.open; }, true);
 $('card').addEventListener('click', (e) => { if (e.target === $('card')) $('card').close(); });
 
 boot();
