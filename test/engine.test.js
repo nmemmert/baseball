@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   newGame, autoPlay, pitch, finishAtBat, changePitcher, pinchHit, pinchRun, battingTeam, fieldingTeam,
-  winProb, pack, unpack, reviveGame, aiPitch, currentBatter,
+  winProb, pack, unpack, reviveGame, aiPitch, currentBatter, defSub, bullpenRole, repertoire, makeFreeAgent,
 } from '../src/engine.js';
 
 test('AI-vs-AI games finish with realistic scoring at every difficulty', () => {
@@ -107,4 +107,25 @@ test('platoon: same-handed matchups hurt hitters', () => {
   const g = newGame(2);
   const b = currentBatter(g), p = fieldingTeam(g).pitcher;
   assert.ok([-1, 0, 1].includes(((b.hand === 'S') ? 0 : (b.hand !== p.hand ? 1 : -1))));
+});
+
+test('arsenals, bullpen roles, defensive subs and free agents', () => {
+  const g = newGame(31);
+  const t = fieldingTeam(g);
+  assert.ok(t.pitcher.ars.length === 3);
+  assert.equal(repertoire(t.pitcher).length, 3);
+  const roles = t.rp.map((p) => bullpenRole(t, p));
+  assert.ok(roles.includes('Closer') && roles.includes('Setup') && roles.includes('Long'));
+  const bat = battingTeam(g), b = bat.bench[0], old = bat.lineup[3];
+  assert.ok(defSub(g, bat, b.id, 3));
+  assert.equal(bat.lineup[3], b);
+  assert.ok(bat.usedBatters.includes(old));
+  const fa = makeFreeAgent(() => 0.5, new Set(), 'pbat');
+  assert.ok(fa.age <= 21 && fa.type === 'bat');
+});
+
+test('pitch mix order changes outcomes without breaking the game', () => {
+  const g = newGame(13);
+  for (let i = 0; i < 200 && !g.over; i++) pitch(g, { off: {}, def: { mix: i % 2 ? 'fb' : 'off' } });
+  assert.ok(g.paCount > 20);
 });

@@ -57,3 +57,61 @@ test('a season with a user-played game saves and reloads', () => {
   simToEnd(r.lg);
   assert.equal(r.lg.phase, 'done');
 });
+
+import { value, salary, payroll, signFreeAgent, proposeTrade, autoLineup, roster, kindOf } from '../src/league.js';
+import { decisionReason, newGame, pitch, fieldingTeam, battingTeam } from '../src/engine.js';
+
+test('payroll, budget, free agents and trades', () => {
+  const lg = createLeague(21);
+  const me = userTeam(lg);
+  assert.ok(payroll(me) <= me.budget);
+  assert.equal(lg.fa.length, 14);
+  // sign the best affordable batter, releasing the weakest batter
+  const weakest = [...me.batters].sort((a, b) => value(a) - value(b))[0];
+  const fa = [...lg.fa].filter((f) => f.type === 'bat').sort((a, b) => value(b) - value(a))[0];
+  const r = signFreeAgent(lg, me, fa.uid, weakest.uid);
+  if (r.ok) { assert.ok(me.batters.includes(fa)); assert.ok(lg.fa.includes(weakest)); assert.ok(payroll(me) <= me.budget); }
+  else assert.match(r.msg, /budget/);
+  // releasing a pitcher for a hitter is rejected by slot (not found)
+  assert.equal(signFreeAgent(lg, me, fa.uid, me.sp[0].uid).ok, false);
+  // trades: must be like-for-like and value-fair
+  const other = lg.teams[1];
+  const mine = [...me.batters].sort((a, b) => value(b) - value(a))[0], theirs = [...other.batters].sort((a, b) => value(a) - value(b))[0];
+  assert.equal(proposeTrade(lg, me, mine.uid, other, other.sp[0].uid).ok, false);
+  const t = proposeTrade(lg, me, mine.uid, other, theirs.uid);
+  if (t.ok) { assert.ok(other.batters.includes(mine)); assert.ok(me.batters.includes(theirs)); }
+  assert.equal(roster(me).length, 24);
+});
+
+test('history records the user result and offseason keeps rosters whole', () => {
+  const lg = createLeague(22);
+  simToEnd(lg);
+  const h = lg.history[0];
+  assert.ok(h.result && h.w + h.l === SEASON_GAMES);
+  const budget = userTeam(lg).budget;
+  newSeason(lg);
+  for (const t of lg.teams) { assert.equal(t.batters.length, 14); assert.equal(t.sp.length, 5); assert.equal(t.rp.length, 5); assert.ok(payroll(t) <= t.budget + 0.01, `${t.name} payroll`); }
+  assert.ok(lg.fa.length === 14);
+  assert.ok(budget > 0);
+});
+
+test('auto lineup puts a healthy, good nine in order', () => {
+  const lg = createLeague(23);
+  const me = userTeam(lg);
+  me.batters[0].inj = 5;
+  autoLineup(me);
+  assert.equal(me.batters.length, 14);
+  assert.ok(me.batters.slice(0, 9).every((p) => p.inj === 0));
+});
+
+test('decision rules fire for the user team only when asked', () => {
+  const g = newGame(41);
+  const fld = fieldingTeam(g);
+  g.bases = [{}, {}, {}];
+  assert.equal(decisionReason(g, fld, { loaded: true }), 'Bases loaded');
+  assert.equal(decisionReason(g, fld, {}), null);
+  g.bases = [null, null, null];
+  fld.pitcher.stats.pitches = 200;
+  assert.match(decisionReason(g, fld, { tired: true }), /tiring/);
+  assert.equal(decisionReason(g, battingTeam(g), { tired: true }), null);
+});

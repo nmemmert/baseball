@@ -1,7 +1,7 @@
 // Season mode: an 8-team league, 28-game schedule, playoffs, injuries,
 // pitcher rest, hot/cold streaks and yearly player development.
 import {
-  attachRng, makeTeam, startGame, autoPlay, commitGame, blankBat, blankPit,
+  attachRng, makeTeam, startGame, autoPlay, commitGame, blankBat, blankPit, makeFreeAgent,
 } from './engine.js';
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
@@ -26,6 +26,28 @@ function buildSchedule() {
   return days;
 }
 
+// ---------- Value, salary and budget ----------
+export const roster = (t) => [...t.batters, ...t.sp, ...t.rp];
+export function value(p) {
+  const base = p.type === 'bat'
+    ? p.contact * 0.4 + p.power * 0.3 + p.eye * 0.15 + p.speed * 0.05 + (p.def ?? 55) * 0.1
+    : p.stuff * 0.55 + p.control * 0.35 + Math.min(p.stamina, 100) * (p.role === 'SP' ? 0.1 : 0.03);
+  return base + (p.age <= 25 ? (26 - p.age) * 0.7 : p.age >= 31 ? -(p.age - 30) * 0.8 : 0);
+}
+export const salary = (p) => Math.round((0.7 + Math.pow(Math.max(0, value(p) - 35), 1.4) * 0.045) * 10) / 10;
+export const payroll = (t) => Math.round(roster(t).reduce((a, p) => a + salary(p), 0) * 10) / 10;
+export const kindOf = (p) => (p.type === 'bat' ? 'bat' : p.role === 'SP' ? 'sp' : 'rp');
+const slotArr = (t, p) => (p.type === 'bat' ? t.batters : p.role === 'SP' ? t.sp : t.rp);
+const FA_KINDS = ['bat', 'bat', 'bat', 'bat', 'pbat', 'pbat', 'pbat', 'sp', 'sp', 'psp', 'rp', 'rp', 'rp', 'prp'];
+
+function fillFA(lg) {
+  lg.fa.sort((a, b) => value(b) - value(a));
+  lg.fa = lg.fa.slice(0, 6);
+  const used = new Set(roster(lg.teams[0]).map((p) => p.name));
+  let i = 0;
+  while (lg.fa.length < 14) lg.fa.push(makeFreeAgent(lg.rng, used, FA_KINDS[i++ % FA_KINDS.length]));
+}
+
 export function createLeague(seed = Date.now() % 1e9) {
   const lg = attachRng({
     rs: seed | 0, seed, season: 1, day: 0, phase: 'regular', userId: 0, teams: [], schedule: buildSchedule(),
@@ -33,6 +55,7 @@ export function createLeague(seed = Date.now() % 1e9) {
   });
   const used = new Set();
   lg.teams = TEAM_NAMES.map(([c, n]) => makeTeam(lg.rng, c, n, used));
+  lg.fa = [];
   // Give the league some texture: a few stars and a few weak clubs.
   lg.teams.forEach((t, i) => {
     const bias = i === 0 ? 0 : Math.round((lg.rng() - 0.5) * 8);
@@ -41,6 +64,8 @@ export function createLeague(seed = Date.now() % 1e9) {
     // best hitters bat near the top of the order
     t.batters = [...t.batters.slice(0, 9).sort((a, b) => (b.contact + b.power + b.eye) - (a.contact + a.power + a.eye)), ...t.batters.slice(9)];
   });
+  for (const t of lg.teams) t.budget = Math.round(payroll(t) * 1.06 * 10) / 10;
+  fillFA(lg);
   return lg;
 }
 
@@ -176,7 +201,12 @@ function advancePlayoffs(lg) {
   } else if (p.round === 'final' && p.final.done) {
     lg.champion = p.final.winner;
     lg.phase = 'done';
-    lg.history.push({ season: lg.season, champion: lg.teams[lg.champion].name });
+    const me = lg.userId, u = lg.teams[me];
+    const inFinal = p.final.a === me || p.final.b === me, inSemi = p.semis.some((x) => x.a === me || x.b === me);
+    const result = lg.champion === me ? 'Champions' : inFinal ? 'Lost the final' : inSemi ? 'Lost in the semifinals' : 'Missed the playoffs';
+    lg.history.push({ season: lg.season, champion: lg.teams[lg.champion].name, w: u.w, l: u.l, result, payroll: payroll(u) });
+    u.budget = Math.round((u.budget + (lg.champion === me ? 6 : inSemi ? 3 : 1)) * 10) / 10;
+    for (const t of lg.teams) if (t !== u) t.budget = Math.round(t.budget * 1.01 * 10) / 10;
     lg.news.unshift(`${lg.teams[lg.champion].name} are the champions!`);
   }
 }
@@ -219,13 +249,97 @@ export function newSeason(lg) {
       if (p.type === 'bat') {
         for (const k of ['contact', 'power', 'eye']) p[k] = clamp(p[k] + delta(lo, hi), 20, 99);
         p.speed = clamp(p.speed + delta(p.age > 29 ? -4 : lo, p.age > 29 ? 0 : hi), 20, 99);
+        p.def = clamp((p.def ?? 55) + delta(p.age > 30 ? -3 : -1, p.age > 30 ? 0 : 2), 20, 99);
         p.season = blankBat();
       } else {
         for (const k of ['stuff', 'control']) p[k] = clamp(p[k] + delta(lo, hi), 20, 99);
+        for (const a of p.ars || []) a.q = clamp(a.q + delta(lo, hi), 20, 99);
         p.season = blankPit();
       }
     }
   }
+  for (const p of lg.fa) {
+    p.age++;
+    const [lo, hi] = p.age <= 24 ? [0, 5] : [-3, 0];
+    for (const k of p.type === 'bat' ? ['contact', 'power', 'eye'] : ['stuff', 'control']) p[k] = clamp(p[k] + Math.round(lo + lg.rng() * (hi - lo)), 20, 99);
+  }
+  aiOffseason(lg);
+  fillFA(lg);
+}
+
+// ---------- Off-season: free agents and trades ----------
+function swapIn(lg, arr, i, fa) {
+  const old = arr[i];
+  if (fa.type === 'pit') { fa.role = old.role; fa.pos = old.role; } else fa.pos = old.pos;
+  fa.inj = 0; fa.form = 0; fa.debt = 0;
+  arr[i] = fa;
+  lg.fa = lg.fa.filter((x) => x !== fa);
+  old.inj = 0; old.form = 0;
+  lg.fa.push(old);
+  if (lg.fa.length > 20) { lg.fa.sort((a, b) => value(b) - value(a)); lg.fa = lg.fa.slice(0, 20); }
+  return old;
+}
+
+export function signFreeAgent(lg, team, faUid, releaseUid) {
+  const fa = lg.fa.find((x) => x.uid === faUid);
+  if (!fa) return { ok: false, msg: 'That player is no longer available.' };
+  const arr = slotArr(team, fa), i = arr.findIndex((x) => x.uid === releaseUid);
+  if (i < 0) return { ok: false, msg: 'Pick a player to release.' };
+  const pay = Math.round((payroll(team) - salary(arr[i]) + salary(fa)) * 10) / 10;
+  if (pay > team.budget + 1e-9) return { ok: false, msg: `Over budget: $${pay}M vs $${team.budget}M.` };
+  const old = swapIn(lg, arr, i, fa);
+  lg.news.unshift(`${team.name} sign ${fa.name} and release ${old.name}.`);
+  return { ok: true, msg: `Signed ${fa.name}, released ${old.name}.` };
+}
+
+export function proposeTrade(lg, team, myUid, other, theirUid) {
+  const a = roster(team).find((p) => p.uid === myUid), b = roster(other).find((p) => p.uid === theirUid);
+  if (!a || !b) return { ok: false, msg: 'Pick one player from each side.' };
+  if (kindOf(a) !== kindOf(b)) return { ok: false, msg: 'Trade like for like: hitter for hitter, starter for starter, reliever for reliever.' };
+  if (value(a) - value(b) < 2) return { ok: false, msg: `${other.nick} say no — they want more value than ${a.name} brings.` };
+  const mine = Math.round((payroll(team) - salary(a) + salary(b)) * 10) / 10, theirs = Math.round((payroll(other) - salary(b) + salary(a)) * 10) / 10;
+  if (mine > team.budget + 1e-9) return { ok: false, msg: `That puts you over budget ($${mine}M vs $${team.budget}M).` };
+  if (theirs > other.budget + 1e-9) return { ok: false, msg: `${other.nick} cannot fit the salary.` };
+  const arrA = slotArr(team, a), arrB = slotArr(other, b), ia = arrA.indexOf(a), ib = arrB.indexOf(b);
+  if (a.type === 'pit') { [a.role, b.role] = [b.role, a.role]; a.pos = a.role; b.pos = b.role; } else [a.pos, b.pos] = [b.pos, a.pos];
+  arrA[ia] = b; arrB[ib] = a;
+  lg.news.unshift(`Trade: ${team.nick} get ${b.name}; ${other.nick} get ${a.name}.`);
+  return { ok: true, msg: `Deal done: you get ${b.name} for ${a.name}.` };
+}
+
+// Let the AI shop for upgrades in the free-agent pool (used for the other clubs, and as the user's "auto off-season").
+export function autoOffseason(lg, t, tries = 3) {
+  let moves = 0;
+  for (let n = 0; n < tries; n++) {
+    const weak = roster(t).sort((a, b) => value(a) - value(b))[0];
+    const best = lg.fa.filter((f) => kindOf(f) === kindOf(weak) && value(f) > value(weak) + 4 && payroll(t) - salary(weak) + salary(f) <= t.budget).sort((a, b) => value(b) - value(a))[0];
+    if (!best) break;
+    const arr = slotArr(t, weak);
+    swapIn(lg, arr, arr.indexOf(weak), best);
+    moves++;
+  }
+  return moves;
+}
+
+function aiOffseason(lg) {
+  for (const t of lg.teams) if (t !== userTeam(lg)) autoOffseason(lg, t);
+}
+
+// Best nine hitters in a sensible order, and the freshest healthy starter in the next rotation slot.
+export function autoLineup(team) {
+  const ovr = (p) => p.contact * 0.45 + p.power * 0.3 + p.eye * 0.15 + p.speed * 0.05 + (p.def ?? 55) * 0.05 - (p.inj > 0 ? 100 : 0);
+  const sorted = [...team.batters].sort((a, b) => ovr(b) - ovr(a)), pool = sorted.slice(0, 9), bench = sorted.slice(9);
+  const take = (f) => { const x = [...pool].sort((a, b) => f(b) - f(a))[0]; pool.splice(pool.indexOf(x), 1); return x; };
+  const o = [];
+  o[3] = take((p) => p.power + p.contact * 0.3);
+  o[0] = take((p) => p.eye + p.speed * 0.6);
+  o[2] = take(ovr);
+  o[1] = take((p) => p.contact + p.eye * 0.4);
+  [...pool].sort((a, b) => ovr(b) - ovr(a)).forEach((p, k) => { o[4 + k] = p; });
+  team.batters = [...o, ...bench];
+  const i = team.rotIdx % 5;
+  const best = team.sp.map((p, k) => ({ p, k })).filter((x) => x.p.inj === 0).sort((a, b) => (a.p.debt > 0.3) - (b.p.debt > 0.3) || b.p.stuff - a.p.stuff)[0];
+  if (best && best.k !== i) [team.sp[i], team.sp[best.k]] = [team.sp[best.k], team.sp[i]];
 }
 
 // ---------- Leaders ----------
