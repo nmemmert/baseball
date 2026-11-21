@@ -1,0 +1,11 @@
+{
+  "name": "baseball",
+  "version": "0.1.0",
+  "description": "A baseball game about managing the game.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "MIT"
+}
