@@ -41,18 +41,32 @@ function makeBatter(rng, used, sur, pos) {
     id, uid: `p${id}`, type: 'bat', name: uniqueName(rng, used, sur), pos,
     hand: hr < 0.55 ? 'R' : hr < 0.85 ? 'L' : 'S', age: 20 + Math.floor(rng() * 16),
     contact: rating(rng), power: rating(rng, 50), eye: rating(rng), speed: rating(rng, 50, 24),
+    def: rating(rng, 55, 20), tilt: Math.round((rng() + rng() - 1) * 14),
     form: 0, inj: 0, stats: blankBat(), season: blankBat(),
   };
 }
 function makePitcher(rng, used, sur, role) {
   const id = nextId++, sp = role === 'SP';
+  const rest = ['SL', 'CU', 'CH', 'FC'].sort(() => rng() - 0.5);
+  const ars = [rng() < 0.5 ? 'FF' : 'SI', rest[0], rest[1]].map((code) => ({ code, q: rating(rng, 55, 16) }));
   return {
     id, uid: `p${id}`, type: 'pit', role, pos: role, name: uniqueName(rng, used, sur),
     hand: rng() < 0.72 ? 'R' : 'L', age: 20 + Math.floor(rng() * 16),
     stuff: rating(rng, sp ? 58 : 56), control: rating(rng, 55),
     stamina: sp ? 82 + Math.floor(rng() * 24) : 20 + Math.floor(rng() * 20),
-    debt: 0, form: 0, inj: 0, stats: blankPit(), season: blankPit(),
+    ars, debt: 0, form: 0, inj: 0, stats: blankPit(), season: blankPit(),
   };
+}
+
+// Free agents and prospects for the off-season market.
+export function makeFreeAgent(rng, used, kind) {
+  const young = kind[0] === 'p', sur = new Set();
+  const pos = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH', 'IF', 'OF'];
+  const p = kind.endsWith('bat') ? makeBatter(rng, used, sur, pos[Math.floor(rng() * pos.length)]) : makePitcher(rng, used, sur, kind.endsWith('sp') ? 'SP' : 'RP');
+  p.age = young ? 19 + Math.floor(rng() * 3) : 29 + Math.floor(rng() * 8);
+  const keys = p.type === 'bat' ? ['contact', 'power', 'eye', 'def'] : ['stuff', 'control'];
+  for (const k of keys) p[k] = clamp(p[k] + (young ? -12 : 2), 20, 95);
+  return p;
 }
 
 export function makeTeam(rng, city, nick, used = new Set()) {
@@ -120,7 +134,7 @@ const platBonus = (b, p) => (b.hand === 'S' ? 2 : b.hand !== p.hand ? 7 : -6);
 
 function effBatter(b, p) {
   const pl = platBonus(b, p);
-  return { contact: b.contact + b.form * 2 + pl, power: b.power + b.form * 1.5 + pl * 0.7, eye: b.eye + b.form, speed: b.speed };
+  return { contact: b.contact + b.form * 2 + pl, power: b.power + b.form * 1.5 + pl * 0.7, eye: b.eye + b.form, speed: b.speed, tilt: b.tilt || 0 };
 }
 function effPitcher(p) {
   const f = fatigue(p);
@@ -137,14 +151,26 @@ const hrand = (a, b, c) => {
   h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
   return (h >>> 0) / 4294967296;
 };
-const PITCHES = { FF: ['Four-Seam', 6], SI: ['Sinker', 4], FC: ['Cutter', 2], SL: ['Slider', -4], CU: ['Curveball', -9], CH: ['Changeup', -7] };
+const PITCHES = { FF: ['Four-Seam', 6, 'fb'], SI: ['Sinker', 4, 'fb'], FC: ['Cutter', 2, 'fb'], SL: ['Slider', -4, 'off'], CU: ['Curveball', -9, 'off'], CH: ['Changeup', -7, 'off'] };
+export const pitchName = (code) => PITCHES[code][0];
+// A pitcher's arsenal: [{code, name, off, cat, q}] (q = quality of that pitch, 20-95).
 export function repertoire(p) {
-  const first = p.id % 2 ? 'FF' : 'SI', rest = ['SL', 'CU', 'CH', 'FC'], a = rest[p.id % 4], b = rest[(p.id >> 2) % 4 === p.id % 4 ? (p.id % 4 + 1) % 4 : (p.id >> 2) % 4];
-  return [first, a, b].map((c) => ({ code: c, name: PITCHES[c][0], off: PITCHES[c][1] }));
+  let ars = p.ars;
+  if (!ars) {
+    const first = p.id % 2 ? 'FF' : 'SI', rest = ['SL', 'CU', 'CH', 'FC'], a = rest[p.id % 4], b = rest[(p.id >> 2) % 4 === p.id % 4 ? (p.id % 4 + 1) % 4 : (p.id >> 2) % 4];
+    ars = [first, a, b].map((code) => ({ code, q: 55 }));
+  }
+  return ars.map((x) => ({ code: x.code, name: PITCHES[x.code][0], off: PITCHES[x.code][1], cat: PITCHES[x.code][2], q: x.q }));
 }
+// Rating of the batter's weakness for a pitch category: >0 means he handles it well.
+const tiltVs = (b, cat) => (cat === 'fb' ? (b.tilt || 0) : -(b.tilt || 0));
+export const tiltLabel = (b) => ((b.tilt || 0) >= 6 ? 'fastball hitter' : (b.tilt || 0) <= -6 ? 'offspeed hitter' : '');
+const teamDef = (t) => t.lineup.reduce((a, b) => a + (b.def ?? 55), 0) / Math.max(1, t.lineup.length);
+export { teamDef };
+
 function pitchMeta(g, pit, k, n) {
   const r = (c) => hrand(g.seed, g.paCount * 131 + g.inning, n * 7 + c);
-  const types = repertoire(pit), t = types[Math.min(types.length - 1, Math.floor(r(1) * types.length))];
+  const types = repertoire(pit), t = k.t || types[Math.min(types.length - 1, Math.floor(r(1) * types.length))];
   const v = Math.round(86 + (pit.stuff - 40) / 6 + t.off + (pit.role === 'SP' ? 0 : 2) + (r(2) - 0.5) * 3 - fatigue(pit) * 2);
   let x, y;
   const ring = (lo, hi) => { const a = r(3) * 6.2832, d = lo + (hi - lo) * r(4); return [Math.cos(a) * d, Math.sin(a) * d]; };
@@ -186,6 +212,7 @@ export function winProb(g) {
 function scoreRuns(g, runners, batter, { rbi = true } = {}) {
   const bat = battingTeam(g), pit = fieldingTeam(g).pitcher, n = runners.length;
   if (!n) return;
+  (g.scoredNow ||= []).push(...runners.map((r) => r.uid));
   bat.runs += n;
   bat.inningRuns[g.inning - 1] = (bat.inningRuns[g.inning - 1] || 0) + n;
   pit.stats.r += n; pit.stintRuns = (pit.stintRuns || 0) + n;
@@ -229,6 +256,7 @@ function resolveHit(g, kind, batter, running) {
 function resolveOutInPlay(g, batter, def, running) {
   const { rng } = g, [b1, b2, b3] = g.bases;
   const ground = rng() < 0.55 - (batter.power - 50) / 400;
+  g.lastGround = ground;
   batter.stats.ab++;
   const runs = [];
   let rbi = true;
@@ -292,7 +320,7 @@ function bunt(g, batter) {
 }
 
 // ---------- The pitch ----------
-function ballInPlayWeights(B, P, off, def, inZone) {
+function ballInPlayWeights(B, P, off, def, inZone, cat) {
   const c = (B.contact - 50) / 100, p = (B.power - 50) / 100, s = (P.stuff - 50) / 100;
   const w = {
     OUT: 65,
@@ -303,6 +331,8 @@ function ballInPlayWeights(B, P, off, def, inZone) {
   };
   const hit = (m) => { for (const x of ['1B', '2B', '3B', 'HR']) w[x] *= m; };
   if (!inZone) hit(0.82);
+  hit(1 - ((P.fdef ?? 55) - 55) / 300);
+  if (cat) hit(1 + tiltVs(B, cat) / 350);
   if (off.swing === 'aggressive') { w.HR *= 1.15; w['2B'] *= 1.1; }
   if (off.swing === 'patient') hit(0.96);
   if (def.approach === 'attack') hit(1.04);
@@ -321,13 +351,20 @@ function sample(rng, w) {
   return 'OUT';
 }
 
-function pitchKind(g, B, P, off, def) {
+function pitchKind(g, B, P, off, def, pit) {
   const { balls, strikes } = g.pa, rng = g.rng;
   let zone = 0.535 + (P.control - 50) / 250 + (def.approach === 'attack' ? 0.07 : def.approach === 'nibble' ? -0.08 : 0);
   if (balls === 3) zone += 0.12;
   if (strikes === 2 && balls < 2) zone -= 0.06;
   zone = clamp(zone, 0.28, 0.7);
   if (rng() < 0.007) return { kind: 'hbp' };
+  // Choose a pitch from the arsenal (the pitch-mix order tilts the odds), then apply its quality and the hitter's tilt.
+  const ars = repertoire(pit), mix = def.mix || 'mix';
+  const wts = ars.map((a) => (mix === 'fb' ? (a.cat === 'fb' ? 2.4 : 0.7) : mix === 'off' ? (a.cat === 'off' ? 2.4 : 0.7) : 1));
+  let pr = rng() * wts.reduce((x, y) => x + y, 0), ti = 0;
+  for (; ti < wts.length - 1; ti++) { if ((pr -= wts[ti]) < 0) break; }
+  const t = ars[ti], tilt = tiltVs(B, t.cat);
+  P = { ...P, stuff: P.stuff + (t.q - 55) * 0.35 };
   const inZone = rng() < zone;
   let sw = inZone ? 0.62 : 0.29;
   sw += off.swing === 'aggressive' ? 0.08 : off.swing === 'patient' ? -0.09 : 0;
@@ -337,12 +374,24 @@ function pitchKind(g, B, P, off, def) {
   if (off.take) sw = inZone ? 0.03 : 0.02;
   if (off.hitRun) sw = inZone ? 0.93 : 0.8;
   sw = clamp(sw, 0.01, 0.97);
-  if (rng() >= sw) return { kind: inZone ? 'called' : 'ball', inZone };
+  if (rng() >= sw) return { kind: inZone ? 'called' : 'ball', inZone, t };
   let cp = inZone ? 0.93 + (B.contact - 50) / 230 - (P.stuff - 50) / 260 : 0.67 + (B.contact - 50) / 210 - (P.stuff - 50) / 230;
   if (off.hitRun) cp += 0.04;
-  if (rng() >= clamp(cp, 0.3, 0.97)) return { kind: 'whiff', inZone };
-  if (rng() < (inZone ? 0.5 : 0.65)) return { kind: 'foul', inZone };
-  return { kind: 'inplay', inZone };
+  cp += tilt / 450;
+  if (rng() >= clamp(cp, 0.3, 0.97)) return { kind: 'whiff', inZone, t };
+  if (rng() < (inZone ? 0.5 : 0.65)) return { kind: 'foul', inZone, t };
+  return { kind: 'inplay', inZone, t, P };
+}
+
+// Where a ball in play goes: zone -1 (left-field line) .. +1 (right-field line), depth 0 (infield) .. >1 (over the fence).
+function bipMeta(g, res, batter) {
+  const r = (c) => hrand(g.seed, g.paCount * 131 + g.inning, 500 + c);
+  const pull = batter.hand === 'L' ? 0.22 : batter.hand === 'R' ? -0.22 : 0;
+  const zone = Math.max(-1, Math.min(1, (r(1) * 2 - 1) * 0.8 + pull));
+  const depthR = r(2), line = r(3) < 0.4;
+  const t = res === 'HR' ? 'FB' : res === '1B' ? (line ? 'LD' : 'GB') : res === 'OUT' ? 'GB' : 'LD';
+  const depth = { HR: 1.12, '3B': 0.97, '2B': 0.85, '1B': line ? 0.62 : 0.5 }[res] ?? 0.4;
+  return { t, zone: +zone.toFixed(2), depth: +(depth + (res === 'HR' ? 0.08 : (depthR - 0.5) * 0.12)).toFixed(2), r: depthR, line };
 }
 
 function closePA(g, ev, result) {
@@ -393,10 +442,10 @@ export function pitch(g, orders = {}) {
   const def = { approach: 'normal', depth: 'normal', ...(orders.def || {}) };
   const bat = battingTeam(g), pit = fieldingTeam(g).pitcher, batter = bat.lineup[bat.batIdx];
   const rng = g.rng, pa = g.pa, r0 = bat.runs;
-  const ev = { kind: null, result: null, runs: 0, steal: null };
-  g.last = ev;
+  const ev = { kind: null, result: null, runs: 0, steal: null, bip: null, scored: [] };
+  g.last = ev; g.scoredNow = []; g.lastDef = def;
   const finish = () => {
-    ev.runs = bat.runs - r0;
+    ev.runs = bat.runs - r0; ev.scored = g.scoredNow.slice();
     if (g.pa.pitches === 0) { g.wp.push(Math.round(winProb(g) * 1000) / 1000); if (g.wp.length > 140) g.wp.shift(); }
     return ev;
   };
@@ -413,6 +462,7 @@ export function pitch(g, orders = {}) {
   pit.stats.pitches++;
 
   const B = effBatter(batter, pit), P = effPitcher(pit);
+  P.fdef = teamDef(fieldingTeam(g));
   const [b1, b2, b3] = g.bases;
 
   // Who is running on this pitch?
@@ -431,12 +481,13 @@ export function pitch(g, orders = {}) {
     else {
       pa.seq.push('X');
       ev.pitch = pitchMeta(g, pit, { kind: 'inplay', inZone: true }, pa.pitches); pa.locs.push(ev.pitch);
+      ev.bip = { t: 'GB', zone: +((hrand(g.seed, g.paCount, 77) * 2 - 1) * 0.5).toFixed(2), depth: 0.12, r: 0.5, line: false };
       bunt(g, batter);
       closePA(g, ev, 'BUNT');
       ev.kind = 'inplay';
       return finish();
     }
-  } else k = pitchKind(g, B, P, off, def);
+  } else k = pitchKind(g, B, P, off, def, pit);
   ev.kind = k.kind;
   ev.pitch = pitchMeta(g, pit, k, pa.pitches); pa.locs.push(ev.pitch);
 
@@ -502,8 +553,9 @@ export function pitch(g, orders = {}) {
     default: { // inplay
       pa.seq.push('X');
       const before = g.outs, running = !!runner;
-      const res = sample(rng, ballInPlayWeights(B, P, off, def, k.inZone));
-      if (res === 'OUT') { resolveOutInPlay(g, batter, def, running); creditOuts(g, before); closePA(g, ev, 'OUT'); }
+      const res = sample(rng, ballInPlayWeights(B, k.P || P, off, def, k.inZone, k.t && k.t.cat));
+      ev.bip = bipMeta(g, res, batter);
+      if (res === 'OUT') { resolveOutInPlay(g, batter, def, running); ev.bip.t = g.lastGround ? 'GB' : (ev.bip.line ? 'LD' : 'FB'); ev.bip.depth = ev.bip.t === 'GB' ? 0.3 + 0.25 * ev.bip.r : ev.bip.t === 'LD' ? 0.55 + 0.2 * ev.bip.r : 0.65 + 0.3 * ev.bip.r; creditOuts(g, before); closePA(g, ev, 'OUT'); }
       else {
         const n = resolveHit(g, res, batter, running);
         const label = { '1B': 'singles', '2B': 'doubles', '3B': 'triples', HR: 'homers' }[res];
@@ -542,6 +594,18 @@ export function pinchHit(g, team, benchId) {
   team.usedBatters.push(old);
   say(g, `${np.name} pinch-hits for ${old.name}.`);
   team.lineup[team.batIdx] = np;
+  return true;
+}
+
+// Swap a bench player in for a fielder (e.g. a glove-first replacement while protecting a lead).
+export function defSub(g, team, benchId, lineupIdx) {
+  const i = team.bench.findIndex((p) => p.id === benchId);
+  if (i < 0 || lineupIdx < 0 || lineupIdx >= team.lineup.length) return false;
+  const [np] = team.bench.splice(i, 1), old = team.lineup[lineupIdx];
+  np.pos = old.pos;
+  team.usedBatters.push(old);
+  team.lineup[lineupIdx] = np;
+  say(g, `${np.name} comes in to play ${old.pos}, replacing ${old.name}.`);
   return true;
 }
 
@@ -588,6 +652,7 @@ export function aiDefense(g, level = g.level ?? 1) {
   const close = Math.abs(team.runs - batting.runs) <= 1;
   if (!g.bases[0] && (g.bases[1] || g.bases[2]) && g.outs < 2 && g.inning >= 7 && batter.power > 70 && next.power < batter.power - 15) d.ibb = true;
   if (g.bases[2] && g.outs < 2 && g.inning >= 8 && close) d.infieldIn = true;
+  if ((batter.tilt || 0) >= 6) d.mix = 'off'; else if ((batter.tilt || 0) <= -6) d.mix = 'fb';
   if (level >= 2) {
     if (g.bases[0] && !g.bases[1] && g.bases[0].speed > 78 && g.pa.strikes < 2 && g.pa.balls < 2 && g.rng() < 0.1) d.pitchout = true;
     if (batter.power > 60 && batter.hand === 'L') d.shift = true;
@@ -597,19 +662,36 @@ export function aiDefense(g, level = g.level ?? 1) {
   return d;
 }
 
+// Bullpen roles are derived from the arms you have: the closer, the best other arm (setup), the sturdiest (long), the rest (middle).
+export function bullpenRole(team, p) {
+  if (p.role === 'CL') return 'Closer';
+  const rest = team.rp.filter((x) => x.role !== 'CL');
+  const setup = [...rest].sort((a, b) => b.stuff - a.stuff)[0];
+  if (p === setup) return 'Setup';
+  const long = rest.filter((x) => x !== setup).sort((a, b) => b.stamina - a.stamina)[0];
+  return p === long ? 'Long' : 'Middle';
+}
+
+function pickReliever(g, team, level, batting) {
+  const pen = team.bullpen, lead = team.runs - batting.runs, nb = batting.lineup[batting.batIdx];
+  const score = (x) => x.stuff - (x.debt || 0) * 25 + (level >= 2 && nb.hand !== 'S' && x.hand === nb.hand ? 8 : 0);
+  const best = () => [...pen].sort((a, b) => score(b) - score(a))[0];
+  if (level === 0) return best();
+  const by = (role) => pen.find((x) => bullpenRole(team, x) === role);
+  if (g.inning >= 9 && lead > 0 && lead <= 3 && by('Closer')) return by('Closer');
+  if (g.inning === 8 && lead >= 0 && lead <= 3 && by('Setup')) return by('Setup');
+  if (g.inning <= 6 && by('Long')) return by('Long');
+  const mid = pen.filter((x) => bullpenRole(team, x) !== 'Closer');
+  return mid.length ? [...mid].sort((a, b) => score(b) - score(a))[0] : best();
+}
+
 function aiPitching(g, team, level) {
   const p = team.pitcher, batting = team === g.home ? g.away : g.home;
   const lim = level === 0 ? 0.9 : 0.65;
   const tired = fatigue(p) > lim || p.stintRuns >= (level === 0 ? 6 : 4) || (p.role !== 'SP' && p.stats.pitches > p.stamina + 8);
   const lead = team.runs - batting.runs;
   const save = level >= 2 && g.inning >= 9 && lead > 0 && lead <= 3 && p.role !== 'CL';
-  if ((tired || save) && team.bullpen.length) {
-    const cl = team.bullpen.find((x) => x.role === 'CL');
-    const nb = batting.lineup[batting.batIdx];
-    const score = (x) => x.stuff - (x.debt || 0) * 25 + (level >= 2 && nb.hand !== 'S' && x.hand === nb.hand ? 8 : 0);
-    const choice = ((g.inning >= 9 && lead > 0 && lead <= 3) || save) && cl ? cl : [...team.bullpen].sort((a, b) => score(b) - score(a))[0];
-    changePitcher(g, team, choice.id);
-  }
+  if ((tired || save) && team.bullpen.length) changePitcher(g, team, pickReliever(g, team, level, batting).id);
 }
 
 function aiBench(g, team, level) {
@@ -711,3 +793,16 @@ export function unpack(str) {
 }
 
 export function reviveGame(g) { return g ? attachRng(g) : g; }
+
+// ---------- Auto-mode stop rules ----------
+// Why would a manager want to take over right now? Evaluated at the start of a plate appearance.
+export function decisionReason(g, mine, rules = {}) {
+  if (g.over || !mine) return null;
+  const bat = battingTeam(g), fld = fieldingTeam(g), [b1, b2, b3] = g.bases;
+  const close = Math.abs(g.home.runs - g.away.runs) <= 2;
+  if (rules.loaded && b1 && b2 && b3) return 'Bases loaded';
+  if (rules.tired && fld === mine && fatigue(fld.pitcher) > 0.55 && fld.bullpen.length) return `${fld.pitcher.name} is tiring`;
+  if (rules.scoring && bat === mine && (b2 || b3) && g.outs < 2) return 'Runner in scoring position';
+  if (rules.late && g.inning >= 7 && close && (b1 || b2 || b3)) return 'Late and close';
+  return null;
+}
