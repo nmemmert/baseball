@@ -62,7 +62,7 @@ export const GUIDE = [
     <li><b>Handedness</b>: lefty hitters do better against righty pitchers and vice versa. Switch hitters are neutral.</li>
     <li><b>Tilt</b>: a "fastball hitter" or "offspeed hitter" has a weakness you can attack with your pitch mix.</li>
     <li><b>Form</b>: 🔥/🧊 streaks change day to day. <b>Rest</b>: pitchers who threw yesterday are tired today.</li></ul>`],
-  ['The coach &amp; auto mode', `<ul><li>The <b>🧑‍🏫 Coach</b> card suggests up to three moves for the current situation. Tap <b>Do it</b> to apply one. Suggested options are starred ★ in your orders. Turn it off in More.</li>
+  ['The coach &amp; auto mode', `<ul><li>The <b>🧑‍🏫 Coach</b> shows a one-line tip under the field (and up to three ideas on the Coach tab). Tap <b>Do it</b> to apply one. Suggested options are starred ★ in your orders. Turn it off in More.</li>
     <li><b>▶ Auto</b> lets the AI manage your team while you watch. It <b>pauses at decision points</b> you choose (tired pitcher, scoring chances, late &amp; close, bases loaded).</li>
     <li><b>⏭ Decision</b> instantly plays ahead to the next decision point. <b>Autopilot</b> can finish the half-inning or the whole game.</li></ul>`],
   ['Season, playoffs &amp; off-season', `<ul><li>28 games against 7 opponents. The top 4 teams reach the playoffs (best-of-3 rounds).</li>
@@ -94,11 +94,11 @@ export const TUTORIAL = [
   { id: 'pitch', title: 'Play a pitch', text: 'Tap <b>Next pitch ▶</b> to play one pitch.', spot: '[data-act=pitch1]', ok: (c) => c.tut.pitches >= 1 },
   { id: 'tracker', title: 'The pitch tracker', manual: true, text: 'The strike zone shows where the pitch went: <b>green = ball</b>, <b>red = strike</b>, <b>blue = hit in play</b>. The count (B-S-O) is beside the field. Four balls = walk, three strikes = out.', spot: '.zonebox' },
   { id: 'swing', title: 'Choose an approach', text: 'Set how your batter approaches this at-bat. Tap <b>Swing away</b>.', spot: 'input[data-set=swing][value=aggressive]', ok: (c) => c.ui.swing === 'aggressive' || c.ui.swing === 'patient' },
-  { id: 'play', title: 'Keep playing', text: 'Throw a few more pitches. Try <b>Auto at-bat</b> to finish an at-bat quickly.', spot: '[data-act=pitch1]', ok: (c) => c.tut.pitches >= 4 },
+  { id: 'play', title: 'Keep playing', text: 'Throw a few more pitches with <b>Next pitch</b> and watch the field cam.', spot: '[data-act=pitch1]', ok: (c) => c.tut.pitches >= 4 },
   { id: 'steal', title: 'Call a steal', scene: 'runner', text: 'A fast runner is on first with nobody out. Under <b>Play call</b>, pick <b>Steal</b>, then tap <b>Next pitch</b>.', spot: 'input[data-set=call][value=steal]', ok: (c) => c.tut.stolen },
-  { id: 'coach', title: 'Your coach', manual: true, text: 'The <b>Coach</b> card suggests moves for the situation. Tap <b>Do it</b> to apply one, or ignore it. Suggested options are starred ★ in your orders.', spot: '.coach' },
+  { id: 'coach', title: 'Your coach', manual: true, text: 'The <b>coach line</b> under the field suggests a move — tap <b>Do it</b> to apply it. The <b>Coach</b> tab lists more ideas, and suggested options are starred ★ in <b>Orders</b>.', spot: '.coachline' },
   { id: 'club', title: 'The Club tab', text: 'Your bench and bullpen live in <b>Club</b>: pinch hitters, pinch runners and relievers. Tap <b>Club</b> to look.', spot: '[data-sub=club]', ok: (c) => c.ui.sub === 'club' },
-  { id: 'back', title: 'Back to the game', text: 'Tap <b>Gameday</b> to return.', spot: '[data-sub=field]', ok: (c) => c.ui.sub === 'field' },
+  { id: 'back', title: 'Back to your orders', text: 'Tap <b>Orders</b> to return.', spot: '[data-sub=orders]', ok: (c) => c.ui.sub === 'orders' },
   { id: 'auto', title: 'Auto mode', text: 'Want to just watch? Tap <b>▶ Auto</b> and the AI manages for you. It pauses at decision points.', spot: '[data-act=autostart]', ok: (c) => c.tut.autoUsed },
   { id: 'auto2', title: 'Pause & Decision', manual: true, text: '<b>⏸ Pause</b> stops auto mode any time. <b>⏭ Decision</b> skips ahead to the next moment worth deciding. What counts as a decision is set in <b>More</b>.', spot: '#bar' },
   { id: 'field', title: 'Now play defense', scene: 'field', text: 'Tap <b>Go to the field</b> below — the AI plays out the rest of this half-inning and you take the field.', button: { act: 'tutfield', label: 'Go to the field' }, ok: (c) => c.g.half === 'bot' },

@@ -7,6 +7,7 @@ Installable as an iPhone/Android PWA (works offline).
 - **Offense:** batter approach (work the count / normal / swing away) and a play call per pitch — take, steal, bunt, hit & run — plus pinch-hitters and pinch-runners.
 - **Defense:** pitching approach, **pitch mix** (fastballs / mix / offspeed — hitters have a fastball or offspeed tilt, pitchers have an arsenal with a quality per pitch), pitchout, intentional walk, shift, infield in, outfield depth, bullpen changes and defensive replacements.
 - **Bullpen roles:** closer (9th, 1–3 run leads), setup man (8th), long man, middle relief. The opposing AI follows them.
+- **One-screen game view:** scorebug, field cam and pitch tracker side by side, a one-line coach tip, and tabs for Orders / Coach / Matchup / Auto / Club / Log / Box — the core loop needs no scrolling on a phone. Longer screens (Season, Stats, More) use collapsible sections.
 - **Gameday-style screen:** scorebug, strike-zone pitch tracker (type, speed, location), count and outs, pitcher-vs-batter strip, win-probability graph, hot/cold and platoon tags, replay of the last at-bat, box score, player cards.
 
 ## Visuals, coach & learning
