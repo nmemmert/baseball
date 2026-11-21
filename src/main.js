@@ -305,7 +305,7 @@ const PCLS = { ball: 'ball', called: 'strike', whiff: 'strike', foul: 'strike', 
 function scorebug() {
   const g = app.g, a = g.away, h = g.home;
   const wpH = winProb(g), wpMe = Math.round((g.home === mine() ? wpH : 1 - wpH) * 100);
-  const mid = g.over ? '<div class="inn fin">FINAL</div>' : `<div class="inn">${g.half === 'top' ? '▲' : '▼'} ${g.inning}</div><small>${g.outs} out · ${wpMe}% win</small>`;
+  const mid = g.over ? '<div class="inn fin">FINAL</div>' : `<div class="inn">${g.half === 'top' ? '▲' : '▼'} ${g.inning} <span class="rp ${battingTeam(g) === mine() ? 'bat' : 'fld'}">${battingTeam(g) === mine() ? 'BATTING' : 'FIELDING'}</span></div><small>${g.outs} out · ${wpMe}% win</small>`;
   return `<div class="bug">
     <div class="side ${a === mine() ? 'me' : ''}"><i class="chip" style="background:${teamCol(a)}"></i><div class="ab">${abbr(a)}<small>${a.hits} H</small></div><span class="runs">${a.runs}</span></div>
     <div class="mid">${mid}</div>
@@ -504,7 +504,7 @@ function renderGame() {
   const badge = app.sugg.length ? `<i class="bdg">${app.sugg.length}</i>` : '';
   const tabs = `<div class="ptabs">${GAME_TABS.map(([k, ic, t]) => `<button data-act="sub" data-sub="${k}" class="${ui.sub === k ? 'on' : ''}">${ic} ${t}${k === 'coach' ? badge : ''}</button>`).join('')}</div>`;
   const panels = { orders: ordersPanel, coach: coachPanel, matchup: matchupPanel, auto: autoPanel, club: bench, plays: logPanel, box: boxScore };
-  return `${scorebug()}${app.tut ? tutCard() : ''}<section class="stagesec">${nowCard()}</section>${coachLine()}${tabs}<section class="panel">${panels[ui.sub]()}</section>`;
+  return `${scorebug()}${app.tut ? tutCard() : ''}<section class="stagesec">${nowCard()}</section>${coachLine()}${tabs}<section class="panel ${battingTeam(app.g) === mine() ? 'off' : 'def'}">${panels[ui.sub]()}</section>`;
 }
 
 // ---------- rendering: lineup ----------

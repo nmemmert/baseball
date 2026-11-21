@@ -293,3 +293,9 @@ main { gap:8px; }
 .lprow { display:flex; align-items:center; justify-content:space-between; gap:6px; } .lprow .lastpitch { flex:1; min-width:0; }
 .lprow button { flex:none; width:34px; padding:0; }
 .ptabs { -webkit-mask-image:linear-gradient(to right, #000 88%, transparent); mask-image:linear-gradient(to right, #000 88%, transparent); padding-right:16px; }
+
+/* batting / fielding cue */
+.rp { display:inline-block; font-size:.55rem; letter-spacing:.08em; padding:1px 6px; border-radius:8px; vertical-align:middle; font-weight:800; color:#04132b; }
+.rp.bat { background:var(--green); } .rp.fld { background:var(--blue); }
+.panel.off { border-top:3px solid var(--green); } .panel.def { border-top:3px solid var(--blue); }
+.bug .mid .inn { white-space:nowrap; }
