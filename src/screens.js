@@ -71,6 +71,10 @@ export const GUIDE = [
     <li><b>Handedness</b>: lefty hitters do better against righty pitchers and vice versa. Switch hitters are neutral.</li>
     <li><b>Tilt</b>: a "fastball hitter" or "offspeed hitter" has a weakness you can attack with your pitch mix.</li>
     <li><b>Form</b>: 🔥/🧊 streaks change day to day. <b>Rest</b>: pitchers who threw yesterday are tired today.</li></ul>`],
+  ['Intel: strengths &amp; weaknesses', `<ul><li>The <b>🔎 Intel</b> tab explains <b>where you are</b> (inning, count, runners, and how much this moment swings your win chance), <b>their weaknesses</b> to attack, <b>your weaknesses</b> to cover, <b>strengths</b> on both sides, and <b>trends from this game</b>.</li>
+    <li>It reads today's data: which of your pitches are working or getting hit, how your last at-bats went, which pitches of theirs you are hitting.</li>
+    <li>Small chips on the field (e.g. "Trailing by 2 · ⚡ High leverage") keep the key facts in view.</li>
+    <li>Before a game: the <b>Lineup</b> tab has your team report, and the <b>Season</b> tab scouts your next opponent.</li></ul>`],
   ['The coach &amp; auto mode', `<ul><li>The <b>🧑‍🏫 Coach</b> shows a one-line tip under the field (and up to three ideas on the Coach tab). Tap <b>Do it</b> to apply one. Suggested options are starred ★ in your orders. Turn it off in More.</li>
     <li><b>▶ Auto</b> lets the AI manage your team while you watch. It <b>pauses at decision points</b> you choose (tired pitcher, scoring chances, late &amp; close, bases loaded).</li>
     <li><b>⏭ Decision</b> instantly plays ahead to the next decision point. <b>Autopilot</b> can finish the half-inning or the whole game.</li></ul>`],
@@ -143,6 +147,9 @@ export const FB_GUIDE = [
     <li>Down late? An <b>onside kick</b> wins the ball back about 1 time in 7.</li></ul>`],
   ['Clock management', `<ul><li>The clock stops on incomplete passes, out-of-bounds plays, scores, timeouts and penalties. It keeps running on most runs and completions.</li>
     <li>Leading late: run the ball, play <b>Slow</b>, then <b>Kneel</b>. Trailing late: <b>Hurry-up</b>, throw short sideline passes, save timeouts for the end, <b>Spike</b> when you need to stop it.</li></ul>`],
+  ['Intel: strengths &amp; weaknesses', `<ul><li>The <b>🔎 Intel</b> tab explains <b>where you are</b> (quarter, clock, down and distance, field-goal range and how much this moment swings your win chance), <b>their weaknesses</b> to attack, <b>your weaknesses</b> to cover, <b>strengths</b> on both sides, and <b>trends from this game</b>: run vs pass yards, 3rd-down success, which of your calls and defenses are working, and how often they blitz.</li>
+    <li>Chips on the field (e.g. "Leading by 3 · 3rd &amp; 7 · ⚡ High leverage") keep the key facts in view.</li>
+    <li>Before a game, the <b>Roster</b> tab has your team report and the <b>Season</b> tab scouts your next opponent.</li></ul>`],
   ['Auto mode, season &amp; strategy', `<ul><li><b>▶ Auto</b>: the AI coaches while you watch and pauses at 4th downs, the red zone, the two-minute drill and after touchdowns (change in More). <b>⏭ Decision</b> skips to the next one.</li>
     <li>Season: 7 games against the other clubs, then single-game playoffs for the top 4.</li>
     <li>Tips: don't punt on 4th &amp; 1 near midfield; blitz on 3rd &amp; long only if your rush beats their blocking; use the Matchup tab to see where you are strong.</li></ul>`],

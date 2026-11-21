@@ -28,6 +28,12 @@ Installable as an iPhone/Android PWA (works offline).
 - **Tutorial:** a hands-on practice game that walks you through pitching, orders, steals, the coach, the bench, auto mode, defense and the bullpen — each step waits for you to do the thing.
 - **How to play:** a full written guide (screen legend, every order, ratings, auto mode, season, strategy tips, FAQ) from the title screen or More.
 
+## Intel (both sports)
+- **🔎 Intel tab:** *where you are* (situation in plain English plus how much this moment swings your win chance), *their weaknesses to attack*, *your weaknesses to cover*, *strengths on both sides*, and *how the game has gone*.
+- It reads today's data, not just ratings: baseball tracks which of your pitches are working or getting hit and your recent at-bats; football tracks run vs. pass yards, 3rd-down success, which of your calls and defenses work, and how often they blitz.
+- **Field chips** keep the key facts in view ("Trailing by 2 · 1 out · ⚡ High leverage", "Leading by 3 · 3rd & 7").
+- **Before a game:** a team report on the Lineup/Roster tab and a scouting report on your next opponent on the Season tab.
+
 ## Auto mode
 - **▶ Auto** lets the AI manage your team while you watch (Slow / Normal / Fast / Instant).
 - It **pauses at decision points** you choose: tired pitcher, scoring chances, late & close, bases loaded.

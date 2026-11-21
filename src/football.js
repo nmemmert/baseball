@@ -120,6 +120,7 @@ export function fbSnap(g, orders = {}) {
   if (g.over) return null;
   const off = { call: '', pace: 'normal', ...(orders.off || {}) }, def = { call: 'base', ...(orders.def || {}) };
   const ev = newEv(g, g.phase === 'kickoff' ? 'kickoff' : g.phase === 'try' ? 'try' : 'play');
+  ev.dcall = def.call;
   g.last = ev; g.plays++;
   const side = actingSide(g), foe = other(side);
   // timeouts stop the clock before the snap
@@ -332,6 +333,10 @@ function finish(g, ev) {
   if (ev.type === 'play' || ev.type === 'penalty') g.clock = Math.max(0, g.clock - dur);
   if (ev.type === 'play' || ev.type === 'penalty') g.running = !ev.stop && !ev.td && !ev.timeoutBy;
   if (ev.msg) say(g, ev.msg);
+  if (ev.type === 'play' || ev.type === 'penalty') {
+    (g.hist ||= []).push({ side: ev.poss, call: ev.call, dcall: ev.dcall, y: ev.yards, res: ev.result, down: ev.down, toGo: ev.toGo, ball: ev.from, td: !!ev.td, fd: !!ev.fd, to: !!ev.turnover, sk: !!ev.sk, pen: ev.type === 'penalty', q: g.quarter });
+    if (g.hist.length > 220) g.hist.shift();
+  }
   if (ev.type === 'play' && (ev.td || ev.safety)) g.running = false;
   g.wp.push(Math.round(fbWinProb(g) * 1000) / 1000); if (g.wp.length > 160) g.wp.shift();
   periodCheck(g);

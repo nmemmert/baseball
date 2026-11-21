@@ -6,12 +6,13 @@ import {
 import * as FL from './fbleague.js';
 import { attachRng } from './engine.js';
 import { FB_TUTORIAL } from './screens.js';
+import { fbGameIntel, fbReport, fbChip, renderIntel, renderReport, chipHtml } from './intel.js';
 
 const ORD = ['', '1st', '2nd', '3rd', '4th'];
 const fmtClock = (s) => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
 const fieldPos = (g) => (g.ball === 50 ? 'MIDFIELD' : g.ball < 50 ? `OWN ${g.ball}` : `OPP ${100 - g.ball}`);
 const DELAY = { slow: 700, normal: 350, fast: 120 };
-const TABS = [['orders', '🎛️', 'Play'], ['coach', '🧑‍🏫', 'Coach'], ['matchup', '⚔️', 'Matchup'], ['auto', '▶️', 'Auto'], ['log', '📜', 'Log'], ['box', '📊', 'Box']];
+const TABS = [['orders', '🎛️', 'Play'], ['coach', '🧑‍🏫', 'Coach'], ['matchup', '⚔️', 'Matchup'], ['intel', '🔎', 'Intel'], ['auto', '▶️', 'Auto'], ['log', '📜', 'Log'], ['box', '📊', 'Box']];
 const DEF_HINTS = { base: 'Balanced defense.', stack: 'Stack the box: strong against the run, weaker against the pass.', blitz: 'Blitz: heavy pressure and more sacks, but short passes and screens get open.', man: 'Man coverage: tight on deep passes, can be beaten underneath.', zone: 'Zone: keeps plays in front of you; fewer big plays, more interceptions.', prevent: 'Prevent: protects against the deep ball, gives up short gains.' };
 const OFF_HINTS = { inrun: 'Inside run: steady yards between the tackles.', outrun: 'Outside run: bigger gains and bigger losses.', sneak: 'QB sneak: best chance for 1–2 yards.', short: 'Short pass: high completion, small gains.', medium: 'Medium pass: the balanced pass play.', deep: 'Deep pass: big gains, low completion, more interceptions.', screen: 'Screen: beats the blitz; short gain with run-after-catch.', punt: 'Punt: give the ball away and flip the field.', fg: 'Field goal: three points if it is good.', kneel: 'Kneel: run out the clock safely.', spike: 'Spike: stop the clock; it uses a down.' };
 
@@ -217,7 +218,7 @@ export function createFootball(ctx) {
   }
   function stage() {
     const g = fb.g, last = [...g.log].reverse().find((l) => !l.startsWith('—')) || '';
-    return `<div class="camwrap fbwrap"><div id="fbcamslot"></div></div>${last ? `<div class="lastplay ${g.last && g.last.td ? 'run' : ''}">${last}</div>` : ''}`;
+    return `<div class="camwrap fbwrap"><div id="fbcamslot"></div>${chipHtml(fbChip(g, mine()))}</div>${last ? `<div class="lastplay ${g.last && g.last.td ? 'run' : ''}">${last}</div>` : ''}`;
   }
   function ordersPanel() {
     const g = fb.g, st = {};
@@ -299,7 +300,7 @@ export function createFootball(ctx) {
     computeSugg();
     const badge = fb.sugg.length ? `<i class="bdg">${fb.sugg.length}</i>` : '';
     const tabs = `<div class="ptabs">${TABS.map(([k, ic, t]) => `<button data-act="fbsub" data-sub="${k}" class="${ui.sub === k ? 'on' : ''}">${ic} ${t}${k === 'coach' ? badge : ''}</button>`).join('')}</div>`;
-    const panels = { orders: ordersPanel, coach: coachPanel, matchup: matchupPanel, auto: autoPanel, log: logPanel, box: boxPanel };
+    const panels = { orders: ordersPanel, coach: coachPanel, matchup: matchupPanel, intel: () => renderIntel(fbGameIntel(fb.g, mine())), auto: autoPanel, log: logPanel, box: boxPanel };
     return `${scorebug()}${fb.tut ? tutCard() : ''}<section class="stagesec">${stage()}</section>${coachLine()}${tabs}<section class="panel ${meActing() ? 'off' : 'def'}">${panels[ui.sub]()}</section>`;
   }
 
@@ -307,22 +308,24 @@ export function createFootball(ctx) {
   function renderRoster() {
     const t = FL.fbUser(lg());
     const groups = Object.entries(t.players).map(([pos, arr]) => fold(`fr_${pos}`, `${POS_NAMES[pos]} <small>(${RATING_LABELS[pos][0]} / ${RATING_LABELS[pos][1]})</small>`, `<table>${arr.map((p) => `<tr><td>${pl(p)}</td><td>${p.age}</td><td><b>${p.a}</b> / <b>${p.b}</b></td></tr>`).join('')}</table>`, ['QB', 'RB', 'WR'].includes(pos)));
-    return `<section><h2>${t.name} — starters</h2><p class="hint">Starters are the best player at each position. Tap a name for a card. (Ratings: first / second as labelled.)</p></section>${groups.join('')}`;
+    const ngx = lg().phase === 'done' ? null : FL.nextFbGame(lg()), oppx = ngx ? (ngx.home === t ? ngx.away : ngx.home) : null;
+    const report = fold('fr_rep', '🔎 Your team report', renderReport(fbReport(t, { opp: oppx }), { goodT: '💪 Strengths', badT: '⚠️ Weaknesses to cover' }), true);
+    return `${report}<section><h2>${t.name} — starters</h2><p class="hint">Starters are the best player at each position. Tap a name for a card. (Ratings: first / second as labelled.)</p></section>${groups.join('')}`;
   }
   function renderSeason() {
     const l = lg(), t = FL.fbUser(l), st = FL.fbStandings(l), rank = st.indexOf(t) + 1;
     const ng = l.phase === 'done' ? null : FL.nextFbGame(l);
-    let status;
+    let status, scout = '';
     if (l.phase === 'done') status = `<div class="banner">${l.champion === l.userId ? '🏆 You are the champions!' : `${l.teams[l.champion].name} won the title.`}</div><div class="row" style="justify-content:center"><button class="primary" data-act="fbnewseason">Start season ${l.season + 1}</button></div>`;
     else if (fb.g && fb.kind === 'season') status = '<p>Game in progress.</p><div class="row"><button class="primary" data-act="fbresume">Resume game</button></div>';
-    else if (ng) { const home = ng.home === t; status = `<p><b>${ng.label}</b><br>${home ? 'vs' : '@'} <b>${(home ? ng.away : ng.home).name}</b> <small>(${home ? 'home' : 'away'})</small></p><div class="row"><button class="primary" data-act="fbplaynext">Coach game</button><button data-act="fbsimgame">Sim game</button><button class="ghost" data-act="fbsimend">Sim to end of season</button></div>`; }
+    else if (ng) { const home = ng.home === t; scout = fold('fscout', `🔎 Scouting: ${(home ? ng.away : ng.home).nick}`, renderReport(fbReport(home ? ng.away : ng.home, { asOpp: true }), { goodT: '🛡️ Their strengths — watch out', badT: '🎯 Their weaknesses — attack these' }) + renderReport(fbReport(t, { opp: home ? ng.away : ng.home }), { goodT: '✅ Your edges against them', badT: '⚠️ Where they have the edge' }), true); status = `<p><b>${ng.label}</b><br>${home ? 'vs' : '@'} <b>${(home ? ng.away : ng.home).name}</b> <small>(${home ? 'home' : 'away'})</small></p><div class="row"><button class="primary" data-act="fbplaynext">Coach game</button><button data-act="fbsimgame">Sim game</button><button class="ghost" data-act="fbsimend">Sim to end of season</button></div>`; }
     else status = `<p>${FL.fbUserEliminated(l) ? 'You are out of the playoffs.' : 'Waiting on the other playoff game.'}</p><div class="row"><button class="primary" data-act="fbadvance">Advance a week</button><button class="ghost" data-act="fbsimend">Sim to end of season</button></div>`;
     const rows = st.map((x, i) => `<tr class="${x === t ? 'me' : ''} ${i === 3 ? 'cut' : ''}"><td>${i + 1}. ${x.name}</td><td>${x.w}-${x.l}${x.t ? '-' + x.t : ''}</td><td>${x.pf - x.pa > 0 ? '+' : ''}${x.pf - x.pa}</td></tr>`).join('');
     let bracket = '';
     if (l.playoffs) { const sr = (s, label) => `<tr><td>${label}</td><td>${l.teams[s.a].nick}${s.done && s.winner === s.a ? ' ✔' : ''}</td><td>${l.teams[s.b].nick}${s.done && s.winner === s.b ? ' ✔' : ''}</td><td>${s.score ? s.score.join('-') : ''}</td></tr>`; bracket = `<section><h2>Playoffs (single game)</h2><table>${l.playoffs.semis.map((s, i) => sr(s, `Semi ${i + 1}`)).join('')}${l.playoffs.final ? sr(l.playoffs.final, 'Final') : ''}</table></section>`; }
     const res = l.results.slice(0, 8).map((r) => `<tr><td>${r.away}</td><td>${r.as}</td><td>${r.home}</td><td>${r.hs}</td></tr>`).join('');
     const hist = l.history.length ? fold('fhist', 'History', `<table><tr><th>Season</th><th>Champion</th><th>You</th><th></th></tr>${[...l.history].reverse().map((h) => `<tr><td>${h.season}</td><td>${h.champion}</td><td>${h.w}-${h.l}${h.t ? '-' + h.t : ''}</td><td><small>${h.result}</small></td></tr>`).join('')}</table>`) : '';
-    return `<section><h2>Season ${l.season} · ${t.w}-${t.l}${t.t ? '-' + t.t : ''} · ${l.phase === 'regular' ? `${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'} place` : l.phase === 'playoffs' ? 'playoffs' : 'complete'}</h2>${status}</section>${bracket}
+    return `<section><h2>Season ${l.season} · ${t.w}-${t.l}${t.t ? '-' + t.t : ''} · ${l.phase === 'regular' ? `${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'} place` : l.phase === 'playoffs' ? 'playoffs' : 'complete'}</h2>${status}</section>${scout}${bracket}
       ${fold('fstand', 'Standings <small>(top 4 make the playoffs)</small>', `<table><tr><th></th><th>Record</th><th>+/-</th></tr>${rows}</table>`, true)}${fold('fres', 'Results', `<table>${res || '<tr><td>No games yet</td></tr>'}</table>`)}${hist}`;
   }
   function renderStats() {

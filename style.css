@@ -316,3 +316,15 @@ main { gap:8px; }
 .bug .ab { white-space:nowrap; } .pball { font-style:normal; font-size:.7rem; margin-left:3px; }
 .fbdefrow .seg { gap:4px; } .fbdefrow .seg span { padding:4px 8px; font-size:.78rem; min-height:30px; line-height:20px; }
 .mu span { line-height:1.15; }
+
+/* ===== intel ===== */
+.intel h3 { margin:14px 0 6px; font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--blue); }
+.ins { display:grid; grid-template-columns:24px 1fr; gap:6px; padding:6px 8px; margin:4px 0; border-radius:10px; background:var(--bg2); border-left:3px solid var(--line2); font-size:.84rem; line-height:1.35; }
+.ins.good { border-left-color:var(--green); } .ins.bad { border-left-color:var(--strike); }
+.ins i { font-style:normal; text-align:center; } .ins span i { font-style:italic; color:var(--blue); }
+.lev { background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:8px 10px; margin-top:8px; }
+.levrow { display:flex; justify-content:space-between; font-size:.84rem; padding:2px 0; } .levrow.good b { color:var(--green); } .levrow.bad b { color:var(--strike); }
+.levmeter { height:6px; border-radius:3px; background:var(--track); margin:6px 0 4px; overflow:hidden; } .levmeter i { display:block; height:100%; background:var(--amber); }
+.camchip { position:absolute; top:6px; left:6px; right:6px; display:flex; flex-wrap:wrap; gap:4px; pointer-events:none; }
+.camchip span { background:rgba(6,20,44,.72); color:#fff; font-size:.62rem; font-weight:700; padding:2px 7px; border-radius:9px; backdrop-filter:blur(4px); }
+.camchip span.good { background:rgba(15,157,88,.82); } .camchip span.bad { background:rgba(213,0,50,.82); } .camchip span.warn { background:rgba(224,140,0,.9); }

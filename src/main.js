@@ -6,6 +6,7 @@ import {
 import * as L from './league.js';
 import { saveRaw, loadRaw, clearSave } from './store.js';
 import { advise, stars, todo } from './coach.js';
+import { bbGameIntel, bbReport, bbChip, renderIntel, renderReport, chipHtml } from './intel.js';
 import { createCam } from './cam.js';
 import { introHtml, startHtml, guideHtml, sportHtml, TUTORIAL } from './screens.js';
 import { createFootball } from './fbui.js';
@@ -367,7 +368,7 @@ function nowCard() {
   const lastLine = [...g.log].reverse().find((l) => !l.startsWith('—')) || '';
   const play = lastLine && !replay ? `<div class="lastplay ${g.last && g.last.runs ? 'run' : ''}">${lastLine}</div>` : '';
   const rep = faded && g.lastPA ? '<button class="sm" data-act="replay" aria-label="Replay last at-bat">↻</button>' : '';
-  return `<div class="stage"><div class="camcol"><div class="camwrap"><div id="camslot"></div><div class="camcount"><div>B${dotsRow(g.pa.balls, 3, 'b')}</div><div>S${dotsRow(g.pa.strikes, 2, 's')}</div><div>O${dotsRow(g.outs, 2, 'o')}</div></div></div></div>
+  return `<div class="stage"><div class="camcol"><div class="camwrap"><div id="camslot"></div>${chipHtml(bbChip(g, mine()))}<div class="camcount"><div>B${dotsRow(g.pa.balls, 3, 'b')}</div><div>S${dotsRow(g.pa.strikes, 2, 's')}</div><div>O${dotsRow(g.outs, 2, 'o')}</div></div></div></div>
     <div class="zonecol"><div class="zonebox">${trackerSvg(locs, faded)}</div><div class="lprow">${lp}${rep}</div></div></div>${play}`;
 }
 
@@ -492,7 +493,7 @@ function coachPanel() {
   return rows || '<small>Nothing to change right now — play on.</small>';
 }
 
-const GAME_TABS = [['orders', '🎛️', 'Orders'], ['coach', '🧑‍🏫', 'Coach'], ['matchup', '⚔️', 'Matchup'], ['auto', '▶️', 'Auto'], ['club', '👥', 'Club'], ['plays', '📜', 'Log'], ['box', '📊', 'Box']];
+const GAME_TABS = [['orders', '🎛️', 'Orders'], ['coach', '🧑‍🏫', 'Coach'], ['matchup', '⚔️', 'Matchup'], ['intel', '🔎', 'Intel'], ['auto', '▶️', 'Auto'], ['club', '👥', 'Club'], ['plays', '📜', 'Log'], ['box', '📊', 'Box']];
 
 function renderGame() {
   if (!app.g) {
@@ -507,7 +508,7 @@ function renderGame() {
   computeSugg();
   const badge = app.sugg.length ? `<i class="bdg">${app.sugg.length}</i>` : '';
   const tabs = `<div class="ptabs">${GAME_TABS.map(([k, ic, t]) => `<button data-act="sub" data-sub="${k}" class="${ui.sub === k ? 'on' : ''}">${ic} ${t}${k === 'coach' ? badge : ''}</button>`).join('')}</div>`;
-  const panels = { orders: ordersPanel, coach: coachPanel, matchup: matchupPanel, auto: autoPanel, club: bench, plays: logPanel, box: boxScore };
+  const panels = { orders: ordersPanel, coach: coachPanel, matchup: matchupPanel, intel: () => renderIntel(bbGameIntel(app.g, mine())), auto: autoPanel, club: bench, plays: logPanel, box: boxScore };
   return `${scorebug()}${app.tut ? tutCard() : ''}<section class="stagesec">${nowCard()}</section>${coachLine()}${tabs}<section class="panel ${battingTeam(app.g) === mine() ? 'off' : 'def'}">${panels[ui.sub]()}</section>`;
 }
 
@@ -519,7 +520,9 @@ function renderLineup() {
   const bat = t.batters.map((p, i) => (i === 9 ? '<tr><th colspan="3">Bench</th></tr>' : '') + row(p, i, 'b', i < 9 ? `${i + 1}. ` : '')).join('');
   const sp = t.sp.map((p, i) => row(p, i, 's', i === t.rotIdx % 5 ? '▶ ' : `${i + 1}. `).replace('</tr>', `<td><small>${restLabel(p)}</small></td></tr>`)).join('');
   const rp = t.rp.map((p) => `<tr class="${p.inj > 0 ? 'dim' : ''}"><td>${p.name}${tagHtml(p)}${roleTag(t, p)}</td><td>${p.pos}</td><td><small>${p.hand} · ${ratings(p)} · ${restLabel(p)}</small></td></tr>`).join('');
-  return `<section><h2>Batting order</h2>${note}<div class="row"><button data-act="autolineup">✨ Auto-set lineup &amp; rotation</button>${chk('autoLineup', app.settings.autoLineup, 'Do this before every game', false)}</div>
+  const nextOpp = (() => { const ng = app.lg.phase === 'done' ? null : L.nextGame(app.lg); return ng ? (ng.home === t ? ng.away : ng.home) : null; })();
+  const report = fold('l_rep', '🔎 Your team report', renderReport(bbReport(t, { vs: nextOpp ? nextOpp.sp[nextOpp.rotIdx % 5] : null }), { goodT: '💪 Strengths', badT: '⚠️ Weaknesses to cover' }), true);
+  return `${report}<section><h2>Batting order</h2>${note}<div class="row"><button data-act="autolineup">✨ Auto-set lineup &amp; rotation</button>${chk('autoLineup', app.settings.autoLineup, 'Do this before every game', false)}</div>
     <p class="hint">Tap a player, then tap another to swap them. The first nine bat in order; hurt players are replaced automatically.</p><div class="scroll"><table>${bat}</table></div></section>
     <div class="cols"><section><h2>Starting rotation</h2><p class="hint">▶ is your next starter. Tap two to swap.</p><div class="scroll"><table>${sp}</table></div></section>
     ${fold('l_pen', 'Bullpen', `<p class="hint">The closer protects 1–3 run leads in the 9th; the setup man covers the 8th. Relievers used yesterday are tired today.</p><div class="scroll"><table>${rp}</table></div>`)}</div>`;
@@ -569,7 +572,7 @@ function todoCard() {
 function renderSeason() {
   const lg = app.lg, t = L.userTeam(lg), st = L.standings(lg), rank = st.indexOf(t) + 1;
   const ng = lg.phase === 'done' ? null : L.nextGame(lg);
-  let status;
+  let status, scout = '';
   if (lg.phase === 'done') {
     status = `<div class="banner">${lg.champion === lg.userId ? '🏆 You are the champions!' : `${lg.teams[lg.champion].name} won the title.`}</div>
       <div class="row" style="justify-content:center"><button class="primary" data-act="newseason">Start season ${lg.season + 1}</button></div>
@@ -578,6 +581,7 @@ function renderSeason() {
     status = `<p>Game in progress.</p><div class="row"><button class="primary" data-act="resume">Resume game</button></div>`;
   } else if (ng) {
     const home = ng.home === t;
+    scout = fold('scout', `🔎 Scouting: ${(home ? ng.away : ng.home).nick}`, renderReport(bbReport(home ? ng.away : ng.home, { asOpp: true, vs: t.sp[t.rotIdx % 5] }), { goodT: '🛡️ Their strengths — watch out', badT: '🎯 Their weaknesses — attack these' }), true);
     status = `<p><b>${ng.label}</b><br>${home ? 'vs' : '@'} <b>${(home ? ng.away : ng.home).name}</b> <small>(${home ? 'home' : 'away'})</small></p>
       <div class="row"><button class="primary" data-act="playnext">Manage game</button><button data-act="simgame">Sim game</button><button class="ghost" data-act="simend">Sim to end of season</button></div>`;
   } else {
@@ -592,7 +596,7 @@ function renderSeason() {
   const res = lg.results.slice(0, 8).map((r) => `<tr><td>${r.away}</td><td>${r.ar}</td><td>${r.home}</td><td>${r.hr}</td></tr>`).join('');
   const hist = lg.history.length ? fold('history', 'History', `<div class="scroll"><table><tr><th>Season</th><th>Champion</th><th>You</th><th></th></tr>${[...lg.history].reverse().map((h) => `<tr><td>${h.season}</td><td>${h.champion}</td><td>${h.w}-${h.l}</td><td><small>${h.result}</small></td></tr>`).join('')}</table></div>`) : '';
   return `<section><h2>Season ${lg.season} · ${t.w}-${t.l} · ${lg.phase === 'regular' ? `${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'} place` : lg.phase === 'playoffs' ? 'playoffs' : 'complete'}</h2>${status}</section>
-    ${todoCard()}${lg.phase === 'done' ? renderOffseason() : ''}${bracket}
+    ${scout}${todoCard()}${lg.phase === 'done' ? renderOffseason() : ''}${bracket}
     ${fold('standings', 'Standings <small>(top 4 make the playoffs)</small>', `<div class="scroll"><table><tr><th></th><th>W</th><th>L</th><th>+/-</th></tr>${rows}</table></div>`, true)}
     ${fold('results', 'Results &amp; news', `<div class="scroll"><table>${res || '<tr><td>No games yet</td></tr>'}</table></div><div class="news" style="margin-top:8px">${lg.news.slice(0, 8).map((n) => `<p style="margin:3px 0">${n}</p>`).join('') || 'Quiet so far.'}</div>`)}
     ${hist}`;
