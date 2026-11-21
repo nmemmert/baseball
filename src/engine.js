@@ -24,7 +24,7 @@ const LAST = ['Rivera', 'Sullivan', 'Okafor', 'Brandt', 'Kowalski', 'Tanaka', 'D
 let nextId = 1;
 export function bumpIds(n) { nextId = Math.max(nextId, n + 1); }
 
-function uniqueName(rng, used, teamSur) {
+export function uniqueName(rng, used, teamSur) {
   for (let i = 0; i < 80; i++) {
     const f = pick(rng, FIRST), l = pick(rng, LAST), n = `${f} ${l}`;
     if (!used.has(n) && !teamSur.has(l)) { used.add(n); teamSur.add(l); return n; }
@@ -764,7 +764,7 @@ export function pack(root) {
   const table = new Map(), queue = [];
   let self = null;
   const rep = (k, v) => {
-    if (v && typeof v === 'object' && v !== self && (v.type === 'bat' || v.type === 'pit' || v.type === 'team')) {
+    if (v && typeof v === 'object' && v !== self && v.uid && v.type) {
       if (!table.has(v.uid)) { table.set(v.uid, v); queue.push(v); }
       return { $r: v.uid };
     }

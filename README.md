@@ -1,12 +1,24 @@
 # Skipper
 
-A baseball game about **managing** the game. You don't swing or throw — you make the calls, pitch by pitch.
+Two games about **coaching** rather than playing — pick one on the start screen:
+
+- ⚾ **Baseball:** you don't swing or throw — you make the calls, pitch by pitch.
+- 🏈 **Football:** you're the head coach — you call the plays, the players run them.
+
 Installable as an iPhone/Android PWA (works offline).
 
-## What you control
+## Football
+- **Play calling:** inside/outside runs, QB sneak, short/medium/deep passes, screens, punt, field goal (with your make percentage), kneel and spike, plus tempo (hurry-up / normal / slow) and timeouts. No call selected? The coordinator picks.
+- **Defense:** base, stack the box, blitz, man, zone, prevent.
+- **Special situations:** 4th-down decisions, kick vs. go for two, onside kicks, overtime, penalties, clock management.
+- **Same helpers as baseball:** a one-line **coach** with the percentages, **auto mode** that pauses at 4th downs / red zone / two-minute drill / after touchdowns, an animated **field cam** with formations that change with your calls, a Matchup tab (your units vs. theirs), box score, and a **tutorial** plus written guide.
+- **Season:** 7 games, then single-game playoffs for the top 4, with league leaders.
+
+## What you control (baseball)
 - **Offense:** batter approach (work the count / normal / swing away) and a play call per pitch — take, steal, bunt, hit & run — plus pinch-hitters and pinch-runners.
 - **Defense:** pitching approach, **pitch mix** (fastballs / mix / offspeed — hitters have a fastball or offspeed tilt, pitchers have an arsenal with a quality per pitch), pitchout, intentional walk, shift, infield in, outfield depth, bullpen changes and defensive replacements.
 - **Bullpen roles:** closer (9th, 1–3 run leads), setup man (8th), long man, middle relief. The opposing AI follows them.
+- **One-screen game view:** scorebug, field cam and pitch tracker side by side, a one-line coach tip, and tabs for Orders / Coach / Matchup / Auto / Club / Log / Box — the core loop needs no scrolling on a phone. Longer screens (Season, Stats, More) use collapsible sections.
 - **Gameday-style screen:** scorebug, strike-zone pitch tracker (type, speed, location), count and outs, pitcher-vs-batter strip, win-probability graph, hot/cold and platoon tags, replay of the last at-bat, box score, player cards.
 
 ## Visuals, coach & learning
@@ -42,5 +54,6 @@ No dependencies, no build step. To install on iPhone, host it over HTTPS (this r
 ## Layout
 - `src/engine.js` — seeded, serialisable pitch-by-pitch simulation, AI managers, win probability, auto-mode stop rules, save/load.
 - `src/league.js` — season, schedule, standings, playoffs, injuries, rest, progression, payroll, free agents, trades, history, leaders.
-- `src/main.js` — UI. `src/cam.js` — animated field cam. `src/coach.js` — suggestions and to-do. `src/screens.js` — title, intro, guide, tutorial script. `src/feedback.js` — sound + haptics. `src/store.js` — localStorage.
+- `src/football.js` (engine, AI coordinators, coach), `src/fbleague.js` (season), `src/fbcam.js` (field cam), `src/fbui.js` (football screens).
+- `src/main.js` — UI shell. `src/cam.js` — animated field cam. `src/coach.js` — suggestions and to-do. `src/screens.js` — title, intro, guide, tutorial script. `src/feedback.js` — sound + haptics. `src/store.js` — localStorage.
 - `sw.js` + `manifest.webmanifest` — PWA. Bump `VERSION` in `sw.js` if you change the shell file list.

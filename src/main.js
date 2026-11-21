@@ -7,16 +7,19 @@ import * as L from './league.js';
 import { saveRaw, loadRaw, clearSave } from './store.js';
 import { advise, stars, todo } from './coach.js';
 import { createCam } from './cam.js';
-import { introHtml, startHtml, guideHtml, TUTORIAL } from './screens.js';
+import { introHtml, startHtml, guideHtml, sportHtml, TUTORIAL } from './screens.js';
+import { createFootball } from './fbui.js';
+import { createFbCam } from './fbcam.js';
 import { fx, react, prefs, initHaptics } from './feedback.js';
 
 const DEFAULTS = {
   sound: true, haptics: true, level: 1, theme: 'auto', text: 0, cvd: false, speed: 'normal', autoNext: false, autoLineup: false, seenTips: true, visuals: 'full', coach: true, introSeen: false, tutDone: false,
   pause: { tired: true, scoring: true, late: true, loaded: false },
+  sport: 'baseball', fbPause: { fourth: true, redzone: false, twominute: true, score: true }, fbTutDone: false,
 };
 const app = { settings: structuredClone(DEFAULTS), tab: 'game', lg: null, g: null, kind: null, daily: {}, auto: false, skipTok: -1, off: null, screen: null, prevScreen: null, introStep: 0, tut: null, sugg: [], snap: null, savedG: null, savedKind: null };
 const ui = {
-  swing: 'normal', approach: 'normal', call: '', shift: false, infieldIn: false, depth: 'normal', mix: 'mix', sub: 'field', sel: null,
+  swing: 'normal', approach: 'normal', call: '', shift: false, infieldIn: false, depth: 'normal', mix: 'mix', sub: 'orders', sel: null, open: {},
   pauseMsg: '', replayN: null, tradeTeam: 1, tradeKind: 'bat', tMine: null, tTheirs: null,
 };
 const $ = (id) => document.getElementById(id);
@@ -25,7 +28,7 @@ let autoTimer = null;
 // ---------- persistence & preferences ----------
 function persist() {
   const tut = app.kind === 'tutorial';
-  saveRaw(pack({ lg: app.lg, g: tut ? app.savedG : app.g, kind: tut ? app.savedKind : app.kind, settings: app.settings, daily: app.daily }));
+  saveRaw(pack({ lg: app.lg, g: tut ? app.savedG : app.g, kind: tut ? app.savedKind : app.kind, settings: app.settings, daily: app.daily, fb: FB.snapshot() }));
 }
 function applyPrefs() {
   const s = app.settings, el = document.documentElement;
@@ -39,19 +42,20 @@ function boot() {
     try {
       const s = unpack(raw);
       app.lg = s.lg; app.g = s.g; app.kind = s.kind; app.daily = s.daily || {};
-      app.settings = { ...structuredClone(DEFAULTS), ...s.settings, pause: { ...DEFAULTS.pause, ...(s.settings && s.settings.pause) } };
+      app.settings = { ...structuredClone(DEFAULTS), ...s.settings, pause: { ...DEFAULTS.pause, ...(s.settings && s.settings.pause) }, fbPause: { ...DEFAULTS.fbPause, ...(s.settings && s.settings.fbPause) } };
       attachRng(app.lg); reviveGame(app.g);
       if (app.g) { app.g.wp ||= [0.5]; app.g.pa.locs ||= []; }
       app.lg.fa ||= [];
+      FB.restore(s.fb);
     } catch { app.lg = null; app.g = null; app.kind = null; }
   }
   if (!app.lg) app.lg = L.createLeague();
   applyPrefs();
-  app.screen = app.settings.introSeen ? 'start' : 'intro';
+  app.screen = app.settings.introSeen ? 'sport' : 'intro';
   if (app.g) cam.update(app.g);
   const m = /seed=(\d+)/.exec(location.hash);
   if (m) {
-    if (!app.g || app.g.over || app.kind === 'exhibit') { app.settings.introSeen = true; startExhibition(Number(m[1])); }
+    if (!app.g || app.g.over || app.kind === 'exhibit') { app.settings.introSeen = true; app.settings.sport = 'baseball'; startExhibition(Number(m[1])); }
     else toast('Finish your current season game to open the shared game.');
     history.replaceState(null, '', location.pathname);
   }
@@ -107,7 +111,7 @@ function openDialog(html) { const d = $('card'); d.innerHTML = html; if (!d.open
 const closeDialog = () => { const d = $('card'); if (d.open) d.close(); };
 
 // ---------- game flow ----------
-function resetCalls() { Object.assign(ui, { swing: 'normal', approach: 'normal', call: '', shift: false, infieldIn: false, depth: 'normal', mix: 'mix', sub: 'field', pauseMsg: '', replayN: null }); }
+function resetCalls() { Object.assign(ui, { swing: 'normal', approach: 'normal', call: '', shift: false, infieldIn: false, depth: 'normal', mix: 'mix', sub: 'orders', pauseMsg: '', replayN: null }); }
 
 function startSeasonGame() {
   const ng = L.nextGame(app.lg);
@@ -304,7 +308,8 @@ const PCLS = { ball: 'ball', called: 'strike', whiff: 'strike', foul: 'strike', 
 
 function scorebug() {
   const g = app.g, a = g.away, h = g.home;
-  const mid = g.over ? '<div class="inn fin">FINAL</div>' : `<div class="inn">${g.half === 'top' ? '▲' : '▼'} ${g.inning}</div><small>${g.outs} out</small>`;
+  const wpH = winProb(g), wpMe = Math.round((g.home === mine() ? wpH : 1 - wpH) * 100);
+  const mid = g.over ? '<div class="inn fin">FINAL</div>' : `<div class="inn">${g.half === 'top' ? '▲' : '▼'} ${g.inning} <span class="rp ${battingTeam(g) === mine() ? 'bat' : 'fld'}">${battingTeam(g) === mine() ? 'BATTING' : 'FIELDING'}</span></div><small>${g.outs} out · ${wpMe}% win</small>`;
   return `<div class="bug">
     <div class="side ${a === mine() ? 'me' : ''}"><i class="chip" style="background:${teamCol(a)}"></i><div class="ab">${abbr(a)}<small>${a.hits} H</small></div><span class="runs">${a.runs}</span></div>
     <div class="mid">${mid}</div>
@@ -346,18 +351,24 @@ function sparkline() {
     <polyline class="spark-line ${last >= 0.5 ? 'up' : 'down'}" points="${xy}"/></svg>`;
 }
 
+function pitchRows(locs) {
+  return locs.map((l, i) => `<div class="p"><span class="pn ${PCLS[l.k]}">${i + 1}</span><span>${l.tn} <small>${l.v} mph</small></span><b>${PDESC[l.k]}</b></div>`).join('');
+}
+function curLocs() {
+  const g = app.g, replay = ui.replayN !== null && g.lastPA, hasCur = g.pa.locs.length > 0;
+  return { replay, hasCur, locs: replay ? g.lastPA.locs.slice(0, ui.replayN) : (hasCur ? g.pa.locs : (g.lastPA ? g.lastPA.locs : [])) };
+}
 function nowCard() {
-  const g = app.g, replay = ui.replayN !== null && g.lastPA;
-  const hasCur = g.pa.locs.length > 0;
-  const locs = replay ? g.lastPA.locs.slice(0, ui.replayN) : (hasCur ? g.pa.locs : (g.lastPA ? g.lastPA.locs : []));
+  const g = app.g, { replay, hasCur, locs } = curLocs();
   const faded = !replay && !hasCur && !!g.lastPA;
-  const rows = locs.map((l, i) => `<div class="p"><span class="pn ${PCLS[l.k]}">${i + 1}</span><span>${l.tn} <small>${l.v} mph</small></span><b>${PDESC[l.k]}</b></div>`).join('');
   const dotsRow = (n, max, cls) => `<div class="dots">${Array.from({ length: max }, (_, i) => `<i class="dot ${cls} ${i < n ? 'on' : ''}"></i>`).join('')}</div>`;
+  const last = locs[locs.length - 1];
+  const lp = last ? `<div class="lastpitch"><span class="pn ${PCLS[last.k]}">${locs.length}</span><span>${last.tn} <small>${last.v} mph</small><br><b>${PDESC[last.k]}</b></span></div>` : '<div class="lastpitch"><small>First pitch coming up</small></div>';
   const lastLine = [...g.log].reverse().find((l) => !l.startsWith('—')) || '';
-  const lp = lastLine && !replay ? `<div class="lastplay ${g.last && g.last.runs ? 'run' : ''}">${lastLine}</div>` : '';
-  const head = replay ? `<small>Replay: ${g.lastPA.batter}</small>` : faded && g.lastPA ? `<div class="row" style="justify-content:space-between;margin-top:0"><small>Last at-bat: ${g.lastPA.batter}</small><button class="sm" data-act="replay">↻ Replay</button></div>` : '';
-  return `${head}<div class="camwrap"><div id="camslot"></div><div class="camcount"><div>B${dotsRow(g.pa.balls, 3, 'b')}</div><div>S${dotsRow(g.pa.strikes, 2, 's')}</div><div>O${dotsRow(g.outs, 2, 'o')}</div></div></div>
-    <div class="now2"><div class="zonebox">${trackerSvg(locs, faded)}</div><div><div class="pitches">${rows}</div>${lp}</div></div>`;
+  const play = lastLine && !replay ? `<div class="lastplay ${g.last && g.last.runs ? 'run' : ''}">${lastLine}</div>` : '';
+  const rep = faded && g.lastPA ? '<button class="sm" data-act="replay" aria-label="Replay last at-bat">↻</button>' : '';
+  return `<div class="stage"><div class="camcol"><div class="camwrap"><div id="camslot"></div><div class="camcount"><div>B${dotsRow(g.pa.balls, 3, 'b')}</div><div>S${dotsRow(g.pa.strikes, 2, 's')}</div><div>O${dotsRow(g.outs, 2, 'o')}</div></div></div></div>
+    <div class="zonecol"><div class="zonebox">${trackerSvg(locs, faded)}</div><div class="lprow">${lp}${rep}</div></div></div>${play}`;
 }
 
 function arsenalHtml(p) {
@@ -380,6 +391,7 @@ function wpCard() {
 }
 
 const seg = (name, cur, opts, dis = {}, star) => `<div class="seg">${opts.map(([v, t]) => `<label><input type="radio" name="${name}" value="${v}" ${cur === v ? 'checked' : ''} ${dis[v] ? 'disabled' : ''} data-set="${name}"><span>${t}${star === v ? ' ★' : ''}</span></label>`).join('')}</div>`;
+const fold = (key, title, body, open = false) => `<details class="fold" data-fold="${key}" ${(ui.open[key] ?? open) ? 'open' : ''}><summary>${title}</summary><div class="fold-b">${body}</div></details>`;
 const chk = (name, on, text, dis) => `<label class="chk"><input type="checkbox" data-toggle="${name}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${text}</label>`;
 const HINTS = {
   '': '', take: 'Take: the batter lets the next pitch go by (unless it is strike three).',
@@ -397,32 +409,34 @@ function ordersPanel() {
     return `<div class="banner">${won ? 'Victory!' : 'Defeat.'}<br>${g.away.name} ${g.away.runs}, ${g.home.name} ${g.home.runs}</div>
       <div class="row" style="justify-content:center"><button data-act="shareresult">Share result</button></div>`;
   }
-  const reason = !app.auto && g.pa.pitches === 0 ? decisionReason(g, mine(), app.settings.pause) : null;
-  const flag = ui.pauseMsg || reason;
+  if (app.auto) return '<div class="banner pause">▶ Auto mode is managing your team…</div><div class="hint">Tap ⏸ Pause auto below to take over. Speed and pause rules are on the Auto tab.</div>';
+  const flag = ui.pauseMsg;
   const banner = flag ? `<div class="banner pause">⚑ ${flag}</div>` : '';
-  const speed = `<div class="group"><span class="label">Auto-play speed</span>${seg('speed', app.settings.speed, [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast'], ['instant', 'Instant']])}
-      <div class="hint">Auto mode lets the AI manage your team and pauses at decision points (change them in More).</div></div>`;
-  if (app.auto) return `<div class="banner pause">▶ Auto mode is managing your team…</div>${speed}`;
   if (!callOk(ui.call)) ui.call = '';
-  let body;
+  let body, hint = ui.call ? HINTS[ui.call] : '';
   if (userBats()) {
     const dis = { steal: !callOk('steal'), bunt: !callOk('bunt'), hitrun: !callOk('hitrun') };
-    body = `<h2>Offense — your orders</h2>
-      <div class="group"><span class="label">Batter's approach</span>${seg('swing', ui.swing, [['patient', 'Work the count'], ['normal', 'Normal'], ['aggressive', 'Swing away']], {}, st.swing)}</div>
-      <div class="group"><span class="label">Play call (this pitch)</span>${seg('call', ui.call, [['', 'None'], ['take', 'Take'], ['steal', 'Steal'], ['bunt', 'Bunt'], ['hitrun', 'Hit & run']], dis, st.call)}<div class="hint">${HINTS[ui.call]}</div></div>`;
+    body = `<div class="group inline"><span class="label">Approach</span>${seg('swing', ui.swing, [['patient', 'Work count'], ['normal', 'Normal'], ['aggressive', 'Swing away']], {}, st.swing)}</div>
+      <div class="group inline"><span class="label">Call</span>${seg('call', ui.call, [['', 'None'], ['take', 'Take'], ['steal', 'Steal'], ['bunt', 'Bunt'], ['hitrun', 'H&amp;R']], dis, st.call)}</div>`;
   } else {
-    const b = currentBatter(g), tl = tiltLabel(b), p = fieldingTeam(g).pitcher;
-    const best = [...repertoire(p)].sort((x, y) => y.q - x.q)[0];
-    body = `<h2>Defense — your orders</h2>
-      <div class="group"><span class="label">Pitching approach</span>${seg('approach', ui.approach, [['nibble', 'Nibble'], ['normal', 'Normal'], ['attack', 'Attack zone']])}</div>
-      <div class="group"><span class="label">Pitch mix</span>${seg('mix', ui.mix, [['fb', 'Fastballs'], ['mix', 'Mix'], ['off', 'Offspeed']], {}, st.mix)}
-        <div class="hint">${b.name}${tl ? ` is a ${tl}` : ' has no big weakness'}. ${p.name}'s best pitch: ${best.name} (${best.q}).</div></div>
-      <div class="group"><span class="label">Pitch call</span>${seg('call', ui.call, [['', 'None'], ['pitchout', 'Pitchout'], ['ibb', 'Walk him']], { pitchout: !callOk('pitchout') }, st.call)}<div class="hint">${HINTS[ui.call]}</div></div>
-      <div class="group"><span class="label">Alignment</span><div>${chk('shift', ui.shift, `Shift${st.shift ? ' ★' : ''}`, false)}${chk('infieldIn', ui.infieldIn, `Infield in${st.infieldIn ? ' ★' : ''}`, !b3)}</div>
-        ${seg('depth', ui.depth, [['shallow', 'Shallow OF'], ['normal', 'Normal OF'], ['deep', 'Deep OF']], {}, st.depth)}
-        <div class="hint">Shift cuts singles from power hitters; deep OF trims extra-base hits but lets runners tag up.</div></div>`;
+    body = `<div class="group inline"><span class="label">Approach</span>${seg('approach', ui.approach, [['nibble', 'Nibble'], ['normal', 'Normal'], ['attack', 'Attack']])}</div>
+      <div class="group inline"><span class="label">Mix</span>${seg('mix', ui.mix, [['fb', 'Fastball'], ['mix', 'Mix'], ['off', 'Offspeed']], {}, st.mix)}</div>
+      <div class="group inline"><span class="label">Call</span>${seg('call', ui.call, [['', 'None'], ['pitchout', 'Pitchout'], ['ibb', 'Walk']], { pitchout: !callOk('pitchout') }, st.call)}</div>
+      <div class="group inline"><span class="label">Align</span><div>${chk('shift', ui.shift, `Shift${st.shift ? ' ★' : ''}`, false)}${chk('infieldIn', ui.infieldIn, `In${st.infieldIn ? ' ★' : ''}`, !b3)}</div>${seg('depth', ui.depth, [['shallow', 'Shallow'], ['normal', 'Normal'], ['deep', 'Deep']], {}, st.depth)}</div>`;
   }
-  return `${banner}${body}${speed}<div class="group"><span class="label">Autopilot</span><div class="row"><button class="sm" data-act="atbat">Auto at-bat</button><button class="sm" data-act="autohalf">Rest of half-inning</button><button class="sm" data-act="autogame">Finish game</button></div></div>`;
+  return `${banner}${body}${hint ? `<div class="hint">${hint}</div>` : ''}`;
+}
+
+function autoPanel() {
+  const r = app.settings.pause, on = [r.tired && 'a tired pitcher', r.scoring && 'scoring chances', r.late && 'late &amp; close', r.loaded && 'bases loaded'].filter(Boolean);
+  return `<div class="group"><span class="label">Auto-play speed</span>${seg('speed', app.settings.speed, [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast'], ['instant', 'Instant']])}</div>
+    <div class="group"><span class="label">Autopilot</span><div class="row"><button class="sm" data-act="atbat">Auto at-bat</button><button class="sm" data-act="autohalf">Rest of half-inning</button><button class="sm" data-act="autogame">Finish game</button></div></div>
+    <div class="hint">▶ Auto lets the AI manage while you watch. It pauses for ${on.join(', ') || 'nothing (all pause rules are off)'}. Change this in More.</div>`;
+}
+
+function matchupPanel() {
+  const { locs } = curLocs();
+  return `${vsStrip()}<div style="margin-top:10px">${wpCard()}</div>${locs.length ? `<h3>This at-bat</h3><div class="pitches">${pitchRows(locs)}</div>` : ''}`;
 }
 
 function bench() {
@@ -435,13 +449,13 @@ function bench() {
         g.bases.forEach((r, i) => { if (r) act.push(`<button class="sm" data-act="pr" data-base="${i}" data-id="${p.id}">Run ${['1st', '2nd', '3rd'][i]}</button>`); });
       } else act.push(`<button class="sm" data-act="dsubopen" data-id="${p.id}">Replace fielder</button>`);
     }
-    return `<tr><td>${pl(p, vs)}</td><td>${p.pos}</td><td><small>${p.hand} · ${ratings(p)}</small></td><td>${act.join(' ')}</td></tr>`;
+    return `<tr><td>${pl(p, vs)}</td><td>${p.pos}</td><td><small>${p.hand} · ${compact(p)}</small></td><td>${act.join(' ')}</td></tr>`;
   }).join('');
-  const penRows = t.bullpen.map((p) => `<tr><td>${pl(p)}${roleTag(t, p)}</td><td>${p.pos}</td><td><small>${p.hand}HP · ${ratings(p)} · ${restLabel(p)}</small></td><td>${!bats && !g.over ? `<button class="sm" data-act="pitch" data-id="${p.id}">Bring in</button>` : ''}</td></tr>`).join('');
+  const penRows = t.bullpen.map((p) => `<tr><td>${pl(p)}${roleTag(t, p)}</td><td>${p.pos}</td><td><small>${p.hand}HP · ${compact(p)} · ${restLabel(p)}</small></td><td>${!bats && !g.over ? `<button class="sm" data-act="pitch" data-id="${p.id}">Bring in</button>` : ''}</td></tr>`).join('');
   const lineup = t.lineup.map((p, i) => `<tr class="${bats && i === t.batIdx ? 'me' : ''}"><td>${i + 1}. ${pl(p, vs)}</td><td>${p.pos}</td><td><small>DEF ${p.def ?? 55} · ${batLine(p.stats)}</small></td></tr>`).join('');
-  return `<h2>Your club</h2><div class="scroll"><table>${lineup}</table></div>
-    <h3>Bench <small>${bats ? '(pinch hit / run)' : '(defensive replacements)'}</small></h3><div class="scroll"><table>${benchRows || '<tr><td>Empty</td></tr>'}</table></div>
-    <h3>Bullpen ${bats ? '<small>(change pitchers when you take the field)</small>' : ''}</h3><div class="scroll"><table>${penRows || '<tr><td>Empty</td></tr>'}</table></div>`;
+  return `<h3 style="margin-top:0">Bench <small>${bats ? '(pinch hit / run)' : '(defensive replacements)'}</small></h3><div class="scroll"><table>${benchRows || '<tr><td>Empty</td></tr>'}</table></div>
+    <h3>Bullpen ${bats ? '<small>(change pitchers when you take the field)</small>' : ''}</h3><div class="scroll"><table>${penRows || '<tr><td>Empty</td></tr>'}</table></div>
+    ${fold('club_lineup', 'Lineup &amp; today', `<div class="scroll"><table>${lineup}</table></div>`)}`;
 }
 
 function boxScore() {
@@ -449,26 +463,36 @@ function boxScore() {
   const one = (t) => {
     const bats = [...t.lineup, ...t.usedBatters.filter((b) => !t.lineup.includes(b))];
     const ps = [...t.usedPitchers, t.pitcher];
-    return `<section><h2>${t.name}</h2><table>${bats.map((p) => `<tr><td>${pl(p)}</td><td>${p.pos}</td><td><small>${batLine(p.stats)}</small></td></tr>`).join('')}</table>
-      <table style="margin-top:8px">${ps.map((p) => `<tr><td>${pl(p)}</td><td><small>${pitLine(p.stats)}</small></td></tr>`).join('')}</table></section>`;
+    return `<h3>${t.name}</h3><table>${bats.map((p) => `<tr><td>${pl(p)}</td><td>${p.pos}</td><td><small>${batLine(p.stats)}</small></td></tr>`).join('')}</table>
+      <table style="margin-top:8px">${ps.map((p) => `<tr><td>${pl(p)}</td><td><small>${pitLine(p.stats)}</small></td></tr>`).join('')}</table>`;
   };
-  return `<section>${lineScore()}</section>${one(g.away)}${one(g.home)}`;
+  return `${lineScore()}${one(g.away)}${one(g.home)}`;
 }
 
 function logPanel() {
   const g = app.g, fresh = g.log.length - (g.mark ?? g.log.length);
   const lines = [...g.log].slice(-80).reverse();
-  return `<section><h2>Play by play</h2><div class="log">${lines.map((l, i) => `<p class="${l.startsWith('—') ? 'sep' : i < fresh ? 'new' : ''}">${l}</p>`).join('')}</div></section>`;
+  return `<div class="log">${lines.map((l, i) => `<p class="${l.startsWith('—') ? 'sep' : i < fresh ? 'new' : ''}">${l}</p>`).join('')}</div>`;
 }
 
-function coachCard() {
+function computeSugg() {
   const g = app.g;
   app.sugg = [];
-  if ((!app.settings.coach && !app.tut) || g.over || app.auto) return '';
+  if ((!app.settings.coach && !app.tut) || g.over || app.auto) return;
   app.sugg = advise(g, mine(), ui);
-  const rows = app.sugg.map((x, i) => `<div class="sg"><span class="ic">${x.icon}</span><div class="tx"><b>${x.title}</b><small>${x.why}</small></div><button class="sm ${i ? '' : 'primary'}" data-act="sugg" data-i="${i}">Do it</button></div>`).join('');
-  return `<section class="coach"><h2>🧑‍🏫 Coach says</h2>${rows || '<small>Nothing to change right now — play on.</small>'}</section>`;
 }
+function coachLine() {
+  const x = app.sugg[0];
+  if (!x) return '';
+  return `<div class="coachline"><span class="ic">${x.icon}</span><div class="tx"><b>${x.title}</b></div><button class="sm primary" data-act="sugg" data-i="0">Do it</button></div>`;
+}
+function coachPanel() {
+  if (!app.settings.coach && !app.tut) return '<small>The coach is off. Turn it on in More → Display.</small>';
+  const rows = app.sugg.map((x, i) => `<div class="sg"><span class="ic">${x.icon}</span><div class="tx"><b>${x.title}</b><small>${x.why}</small></div><button class="sm ${i ? '' : 'primary'}" data-act="sugg" data-i="${i}">Do it</button></div>`).join('');
+  return rows || '<small>Nothing to change right now — play on.</small>';
+}
+
+const GAME_TABS = [['orders', '🎛️', 'Orders'], ['coach', '🧑‍🏫', 'Coach'], ['matchup', '⚔️', 'Matchup'], ['auto', '▶️', 'Auto'], ['club', '👥', 'Club'], ['plays', '📜', 'Log'], ['box', '📊', 'Box']];
 
 function renderGame() {
   if (!app.g) {
@@ -479,14 +503,12 @@ function renderGame() {
       <div class="row">${ng ? '<button class="primary" data-act="playnext">Manage next game</button>' : ''}<button data-act="exhibit">Exhibition game</button><button data-act="daily" ${today ? 'disabled' : ''}>${today ? 'Daily done ✔' : 'Daily challenge'}</button></div>
       <p class="mute">Season games count in the standings. Exhibition games are one-offs you can share.</p></section>`;
   }
-  const subs = [['field', 'Gameday'], ['club', 'Club'], ['plays', 'Plays'], ['box', 'Box']];
-  const nav = `<div class="sub">${subs.map(([k, t]) => `<button data-act="sub" data-sub="${k}" class="${ui.sub === k ? 'on' : ''}">${t}</button>`).join('')}</div>`;
-  let body;
-  if (ui.sub === 'club') body = `<section>${bench()}</section>`;
-  else if (ui.sub === 'plays') body = logPanel();
-  else if (ui.sub === 'box') body = boxScore();
-  else body = `<section>${nowCard()}</section>${coachCard()}<section>${vsStrip()}</section><section>${wpCard()}</section><section>${ordersPanel()}</section>`;
-  return `${scorebug()}${app.tut ? tutCard() : ''}${nav}${body}`;
+  if (!GAME_TABS.some((t) => t[0] === ui.sub)) ui.sub = 'orders';
+  computeSugg();
+  const badge = app.sugg.length ? `<i class="bdg">${app.sugg.length}</i>` : '';
+  const tabs = `<div class="ptabs">${GAME_TABS.map(([k, ic, t]) => `<button data-act="sub" data-sub="${k}" class="${ui.sub === k ? 'on' : ''}">${ic} ${t}${k === 'coach' ? badge : ''}</button>`).join('')}</div>`;
+  const panels = { orders: ordersPanel, coach: coachPanel, matchup: matchupPanel, auto: autoPanel, club: bench, plays: logPanel, box: boxScore };
+  return `${scorebug()}${app.tut ? tutCard() : ''}<section class="stagesec">${nowCard()}</section>${coachLine()}${tabs}<section class="panel ${battingTeam(app.g) === mine() ? 'off' : 'def'}">${panels[ui.sub]()}</section>`;
 }
 
 // ---------- rendering: lineup ----------
@@ -500,7 +522,7 @@ function renderLineup() {
   return `<section><h2>Batting order</h2>${note}<div class="row"><button data-act="autolineup">✨ Auto-set lineup &amp; rotation</button>${chk('autoLineup', app.settings.autoLineup, 'Do this before every game', false)}</div>
     <p class="hint">Tap a player, then tap another to swap them. The first nine bat in order; hurt players are replaced automatically.</p><div class="scroll"><table>${bat}</table></div></section>
     <div class="cols"><section><h2>Starting rotation</h2><p class="hint">▶ is your next starter. Tap two to swap.</p><div class="scroll"><table>${sp}</table></div></section>
-    <section><h2>Bullpen</h2><p class="hint">The closer protects 1–3 run leads in the 9th; the setup man covers the 8th. Relievers used yesterday are tired today.</p><div class="scroll"><table>${rp}</table></div></section></div>`;
+    ${fold('l_pen', 'Bullpen', `<p class="hint">The closer protects 1–3 run leads in the 9th; the setup man covers the 8th. Relievers used yesterday are tired today.</p><div class="scroll"><table>${rp}</table></div>`)}</div>`;
 }
 
 // ---------- rendering: season & off-season ----------
@@ -568,12 +590,12 @@ function renderSeason() {
     bracket = `<section><h2>Playoffs (best of 3)</h2><table>${lg.playoffs.semis.map((s, i) => sr(s, `Semi ${i + 1}`)).join('')}${lg.playoffs.final ? sr(lg.playoffs.final, 'Final') : ''}</table></section>`;
   }
   const res = lg.results.slice(0, 8).map((r) => `<tr><td>${r.away}</td><td>${r.ar}</td><td>${r.home}</td><td>${r.hr}</td></tr>`).join('');
-  const hist = lg.history.length ? `<section><h2>History</h2><div class="scroll"><table><tr><th>Season</th><th>Champion</th><th>You</th><th></th></tr>${[...lg.history].reverse().map((h) => `<tr><td>${h.season}</td><td>${h.champion}</td><td>${h.w}-${h.l}</td><td><small>${h.result}</small></td></tr>`).join('')}</table></div></section>` : '';
+  const hist = lg.history.length ? fold('history', 'History', `<div class="scroll"><table><tr><th>Season</th><th>Champion</th><th>You</th><th></th></tr>${[...lg.history].reverse().map((h) => `<tr><td>${h.season}</td><td>${h.champion}</td><td>${h.w}-${h.l}</td><td><small>${h.result}</small></td></tr>`).join('')}</table></div>`) : '';
   return `<section><h2>Season ${lg.season} · ${t.w}-${t.l} · ${lg.phase === 'regular' ? `${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'} place` : lg.phase === 'playoffs' ? 'playoffs' : 'complete'}</h2>${status}</section>
     ${todoCard()}${lg.phase === 'done' ? renderOffseason() : ''}${bracket}
-    <div class="cols"><section><h2>Standings <small>(top 4 make the playoffs)</small></h2><div class="scroll"><table><tr><th></th><th>W</th><th>L</th><th>+/-</th></tr>${rows}</table></div></section>
-    <section><h2>Latest results</h2><div class="scroll"><table>${res || '<tr><td>No games yet</td></tr>'}</table></div>
-      <h2 style="margin-top:12px">League news</h2><div class="news">${lg.news.slice(0, 8).map((n) => `<p style="margin:3px 0">${n}</p>`).join('') || 'Quiet so far.'}</div></section></div>${hist}`;
+    ${fold('standings', 'Standings <small>(top 4 make the playoffs)</small>', `<div class="scroll"><table><tr><th></th><th>W</th><th>L</th><th>+/-</th></tr>${rows}</table></div>`, true)}
+    ${fold('results', 'Results &amp; news', `<div class="scroll"><table>${res || '<tr><td>No games yet</td></tr>'}</table></div><div class="news" style="margin-top:8px">${lg.news.slice(0, 8).map((n) => `<p style="margin:3px 0">${n}</p>`).join('') || 'Quiet so far.'}</div>`)}
+    ${hist}`;
 }
 
 // ---------- rendering: stats ----------
@@ -582,32 +604,33 @@ function renderStats() {
   const block = (title, rows) => `<div><h3>${title}</h3><table>${rows.map((x) => `<tr><td><span class="player" data-act="card" data-uid="${x.p.uid}">${x.p.name}</span> <small>${abbr(x.t)}</small></td><td><b>${x.v}</b></td></tr>`).join('') || '<tr><td>—</td></tr>'}</table></div>`;
   const bat = t.batters.map((p) => `<tr><td>${pl(p)}</td><td>${p.season.g}</td><td>${avg(p.season)}</td><td>${p.season.hr}</td><td>${p.season.rbi}</td><td>${p.season.bb}</td><td>${p.season.k}</td></tr>`).join('');
   const pit = [...t.sp, ...t.rp].map((p) => `<tr><td>${pl(p)}</td><td>${p.season.g}</td><td>${ip(p.season)}</td><td>${ra9(p.season)}</td><td>${p.season.k}</td><td>${p.season.bb}</td></tr>`).join('');
-  return `<section><h2>League leaders</h2><div class="cols">${block('Batting avg', Lead.AVG)}${block('Home runs', Lead.HR)}${block('RBI', Lead.RBI)}${block('Runs allowed / 9', Lead.RA9)}${block('Strikeouts (P)', Lead.K)}</div></section>
-    <section><h2>${t.name} — batting</h2><div class="scroll"><table><tr><th></th><th>G</th><th>AVG</th><th>HR</th><th>RBI</th><th>BB</th><th>K</th></tr>${bat}</table></div></section>
-    <section><h2>${t.name} — pitching</h2><div class="scroll"><table><tr><th></th><th>G</th><th>IP</th><th>RA9</th><th>K</th><th>BB</th></tr>${pit}</table></div></section>`;
+  return `${fold('leaders', 'League leaders', `<div class="cols tight">${block('Batting avg', Lead.AVG)}${block('Home runs', Lead.HR)}${block('RBI', Lead.RBI)}${block('Runs allowed / 9', Lead.RA9)}${block('Strikeouts (P)', Lead.K)}</div>`, true)}
+    ${fold('bat', `${t.name} — batting`, `<div class="scroll"><table><tr><th></th><th>G</th><th>AVG</th><th>HR</th><th>RBI</th><th>BB</th><th>K</th></tr>${bat}</table></div>`)}
+    ${fold('pit', `${t.name} — pitching`, `<div class="scroll"><table><tr><th></th><th>G</th><th>IP</th><th>RA9</th><th>K</th><th>BB</th></tr>${pit}</table></div>`)}`;
 }
 
 // ---------- rendering: more ----------
 function renderMore() {
+  if (isFb()) return renderMoreFb();
   const s = app.settings, g = app.g, d = app.daily;
   const exSeed = g && app.kind === 'exhibit' && !g.daily ? g.seed : null;
   const today = d.date === todayKey();
   const dailyTxt = today ? `Today: ${d.won ? 'won' : 'lost'} by ${Math.abs(d.rd)} · ` : 'Same game for everyone today, vs an All-Star manager · ';
-  return `<section><h2>Daily challenge</h2><p class="mute">${dailyTxt}streak ${d.streak || 0} (best ${d.best || 0})</p>
-      <div class="row"><button class="primary" data-act="daily" ${today ? 'disabled' : ''}>${today ? 'Come back tomorrow' : 'Play today’s game'}</button></div></section>
-    <section><h2>Manager &amp; auto mode</h2>
+  return `${fold('m_daily', 'Daily challenge', `<p class="mute">${dailyTxt}streak ${d.streak || 0} (best ${d.best || 0})</p>
+      <div class="row"><button class="primary" data-act="daily" ${today ? 'disabled' : ''}>${today ? 'Come back tomorrow' : 'Play today’s game'}</button></div>`, true)}
+    ${fold('m_mgr', 'Manager &amp; auto mode', `
       <div class="group"><span class="label">Opposing manager</span>${seg('level', String(s.level), [['0', 'Rookie'], ['1', 'Pro'], ['2', 'All-Star']])}<div class="hint">Applies to your next game. Rookies leave tired arms in; All-Stars play the platoons and mixes.</div></div>
       <div class="group"><span class="label">Auto-play speed</span>${seg('speed', s.speed, [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast'], ['instant', 'Instant']])}</div>
       <div class="group"><span class="label">Pause auto mode for…</span><div>${chk('pause:tired', s.pause.tired, 'Tired pitcher', false)}${chk('pause:scoring', s.pause.scoring, 'Scoring chances', false)}${chk('pause:late', s.pause.late, 'Late &amp; close', false)}${chk('pause:loaded', s.pause.loaded, 'Bases loaded', false)}</div></div>
-      <div class="group">${chk('autoNext', s.autoNext, 'Keep going into the next season game', false)}${chk('autoLineup', s.autoLineup, 'Auto-set lineup before each game', false)}</div></section>
-    <section><h2>Display &amp; accessibility</h2>
+      <div class="group">${chk('autoNext', s.autoNext, 'Keep going into the next season game', false)}${chk('autoLineup', s.autoLineup, 'Auto-set lineup before each game', false)}</div>`)}
+    ${fold('m_disp', 'Display &amp; accessibility', `
       <div class="group"><span class="label">Theme</span>${seg('theme', s.theme, [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']])}</div>
       <div class="group"><span class="label">Text size</span>${seg('text', String(s.text), [['0', 'Normal'], ['1', 'Large'], ['2', 'Larger']])}</div>
       <div class="group"><span class="label">Field animations</span>${seg('visuals', s.visuals, [['full', 'Full'], ['quick', 'Quick'], ['off', 'Off']])}</div>
-      <div class="group">${chk('coach', s.coach, 'Show the coach’s suggestions', false)}${chk('cvd', s.cvd, 'Colour-blind-safe pitch colours', false)}${chk('sound', s.sound, 'Sound effects', false)}${chk('haptics', s.haptics, 'Haptics', false)}</div></section>
-    <section><h2>Exhibition</h2><p class="mute">A one-off game with a random matchup. Share the link and a friend gets the same two teams to beat your score.</p>
-      <div class="row"><button data-act="exhibit">New exhibition game</button>${exSeed ? '<button data-act="share">Share this game</button>' : ''}</div>${exSeed ? `<small>Game code #${exSeed}</small>` : ''}</section>
-    <section><h2>Help &amp; data</h2><div class="row"><button data-act="guide">📖 How to play</button><button data-act="starttut">🎓 Tutorial</button><button data-act="title">🏠 Title screen</button><button class="ghost" data-act="reset">Reset all progress</button></div></section>`;
+      <div class="group">${chk('coach', s.coach, 'Show the coach’s suggestions', false)}${chk('cvd', s.cvd, 'Colour-blind-safe pitch colours', false)}${chk('sound', s.sound, 'Sound effects', false)}${chk('haptics', s.haptics, 'Haptics', false)}</div>`)}
+    ${fold('m_exh', 'Exhibition', `<p class="mute">A one-off game with a random matchup. Share the link and a friend gets the same two teams to beat your score.</p>
+      <div class="row"><button data-act="exhibit">New exhibition game</button>${exSeed ? '<button data-act="share">Share this game</button>' : ''}</div>${exSeed ? `<small>Game code #${exSeed}</small>` : ''}`)}
+    ${fold('m_help', 'Help &amp; data', `<div class="row"><button data-act="guide">📖 How to play</button><button data-act="starttut">🎓 Tutorial</button><button data-act="title">🏠 Title screen</button><button class="ghost" data-act="reset">Reset all progress</button></div>`, true)}`;
 }
 
 // ---------- shell ----------
@@ -616,20 +639,58 @@ function renderBar() {
   let h = '';
   if (app.tab === 'game' && g) {
     if (g.over) h = '<button class="primary" data-act="finish">Finish game</button>';
-    else if (ui.sub === 'field') h = app.auto ? '<button class="primary" data-act="autostop">⏸ Pause auto</button>' : '<button data-act="decision">⏭ Decision</button><button data-act="autostart">▶ Auto</button><button class="primary" data-act="pitch1">Next pitch ▶</button>';
+    else h = app.auto ? '<button class="primary" data-act="autostop">⏸ Pause auto</button>' : '<button data-act="decision">⏭ Decision</button><button data-act="autostart">▶ Auto</button><button class="primary" data-act="pitch1">Next pitch ▶</button>';
   }
   bar.innerHTML = h;
   document.body.classList.toggle('nobar', !h);
 }
 
+const isFb = () => app.settings.sport === 'football';
+
+function renderFb() {
+  const t = app.tab;
+  $('top').innerHTML = FB.topHtml();
+  for (const b of document.querySelectorAll('#nav button')) {
+    b.classList.toggle('on', b.dataset.tab === t);
+    if (b.dataset.tab === 'game') b.querySelector('i').textContent = '🏈';
+    if (b.dataset.tab === 'lineup') b.querySelector('span').textContent = 'Roster';
+  }
+  $('view').innerHTML = t === 'more' ? renderMoreFb() : FB.render(t);
+  document.body.classList.toggle('ingame', t === 'game' && FB.hasGame());
+  const bar = t === 'game' ? FB.renderBar() : '';
+  $('bar').innerHTML = bar; document.body.classList.toggle('nobar', !bar);
+  FB.mount(); renderScreen();
+}
+
+function renderMoreFb() {
+  const s = app.settings;
+  return `${fold('m_mgr', 'Coach &amp; auto mode', `
+      <div class="group"><span class="label">Opposing coach</span>${seg('level', String(s.level), [['0', 'Rookie'], ['1', 'Pro'], ['2', 'All-Star']])}<div class="hint">Applies to your next game. Rookies punt too much and never go for two; All-Stars use analytics on 4th down.</div></div>
+      <div class="group"><span class="label">Auto-play speed</span>${seg('speed', s.speed, [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast'], ['instant', 'Instant']])}</div>
+      <div class="group"><span class="label">Pause auto mode for…</span><div>${chk('fbpause:fourth', s.fbPause.fourth, '4th downs', false)}${chk('fbpause:redzone', s.fbPause.redzone, 'Red zone', false)}${chk('fbpause:twominute', s.fbPause.twominute, 'Two-minute drill', false)}${chk('fbpause:score', s.fbPause.score, 'After touchdowns', false)}</div></div>`, true)}
+    ${fold('m_disp', 'Display &amp; accessibility', `
+      <div class="group"><span class="label">Theme</span>${seg('theme', s.theme, [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']])}</div>
+      <div class="group"><span class="label">Text size</span>${seg('text', String(s.text), [['0', 'Normal'], ['1', 'Large'], ['2', 'Larger']])}</div>
+      <div class="group"><span class="label">Field animations</span>${seg('visuals', s.visuals, [['full', 'Full'], ['quick', 'Quick'], ['off', 'Off']])}</div>
+      <div class="group">${chk('coach', s.coach, 'Show the coach’s suggestions', false)}${chk('sound', s.sound, 'Sound effects', false)}${chk('haptics', s.haptics, 'Haptics', false)}</div>`)}
+    ${fold('m_exh', 'Exhibition', `<p class="mute">A one-off game with a random matchup.</p><div class="row"><button data-act="fbexhibit">New exhibition game</button></div>`)}
+    ${fold('m_help', 'Help &amp; data', `<div class="row"><button data-act="guide">📖 How to play</button><button data-act="starttut">🎓 Tutorial</button><button data-act="title">🏠 Title screen</button><button class="ghost" data-act="fbreset">Reset football progress</button></div>`, true)}`;
+}
+
 function render() {
+  if (isFb()) { renderFb(); return; }
   const t = L.userTeam(app.lg), st = L.standings(app.lg), rank = st.indexOf(t) + 1;
   $('top').innerHTML = `<h1 data-act="title">SKIP<b>PER</b></h1><small>${t.name} · ${t.w}-${t.l}${app.lg.phase === 'regular' ? ` · ${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'}` : app.lg.phase === 'playoffs' ? ' · playoffs' : ''}</small>`;
-  for (const b of document.querySelectorAll('#nav button')) b.classList.toggle('on', b.dataset.tab === app.tab);
+  for (const b of document.querySelectorAll('#nav button')) {
+    b.classList.toggle('on', b.dataset.tab === app.tab);
+    if (b.dataset.tab === 'game') b.querySelector('i').textContent = '⚾';
+    if (b.dataset.tab === 'lineup') b.querySelector('span').textContent = 'Lineup';
+  }
   const views = { game: renderGame, lineup: renderLineup, season: renderSeason, stats: renderStats, more: renderMore };
   $('view').innerHTML = views[app.tab]();
   const slot = $('camslot');
   if (slot) slot.appendChild(cam.svg);
+  document.body.classList.toggle('ingame', app.tab === 'game' && !!app.g);
   renderBar();
   renderScreen();
   applySpot();
@@ -638,15 +699,21 @@ function render() {
 // ---------- title / intro / guide screens ----------
 function renderScreen() {
   const box = $('screen');
-  box.className = app.screen === 'start' ? 'dark' : '';
+  box.className = app.screen === 'start' || app.screen === 'sport' ? 'dark' : '';
   if (!app.screen) { box.innerHTML = ''; return; }
   const t = L.userTeam(app.lg);
   if (app.screen === 'intro') box.innerHTML = introHtml(app.introStep, { city: t.city, nick: t.nick });
-  else if (app.screen === 'guide') box.innerHTML = guideHtml(0);
-  else {
+  else if (app.screen === 'guide') box.innerHTML = guideHtml(0, isFb() ? 'fb' : 'bb');
+  else if (app.screen === 'sport') {
+    const inSeason = app.lg.day > 0 || app.lg.history.length > 0 || app.lg.phase !== 'regular';
+    box.innerHTML = sportHtml({ bb: app.g ? 'Game in progress' : inSeason ? `Season ${app.lg.season} · ${t.w}-${t.l}` : 'New season', fb: FB.status().short });
+  } else if (isFb()) {
+    const st = FB.status();
+    box.innerHTML = startHtml({ cont: st.cont, label: st.cont ? st.label : 'Start season', hasDaily: false, dailyDone: false, fb: true });
+  } else {
     const inSeason = app.lg.day > 0 || app.lg.history.length > 0 || app.lg.phase !== 'regular';
     const label = app.g ? `${app.kind === 'tutorial' ? 'Tutorial' : app.kind === 'exhibit' ? 'Exhibition' : `Season ${app.lg.season}`} · game in progress` : inSeason ? `Season ${app.lg.season} · ${t.w}-${t.l}` : 'Start season';
-    box.innerHTML = startHtml({ cont: !!app.g || inSeason, label: app.g || inSeason ? label : 'Start season', hasDaily: true, dailyDone: app.daily.date === todayKey() });
+    box.innerHTML = startHtml({ cont: !!app.g || inSeason, label: app.g || inSeason ? label : 'Start season', hasDaily: true, dailyDone: app.daily.date === todayKey(), fb: false });
   }
 }
 function closeScreen() { app.screen = app.prevScreen && app.screen === 'guide' ? app.prevScreen : null; app.prevScreen = null; render(); }
@@ -656,8 +723,8 @@ function finishIntro(withTut) {
   if (city && city.trim()) t.city = city.trim();
   if (nick && nick.trim()) t.nick = nick.trim();
   t.name = `${t.city} ${t.nick}`;
-  app.settings.introSeen = true; app.screen = null; persist();
-  if (withTut) startTutorial(); else { app.tab = 'game'; render(); }
+  app.settings.introSeen = true; persist();
+  if (withTut) { app.settings.sport = 'baseball'; app.screen = null; startTutorial(); } else { app.screen = 'sport'; render(); }
 }
 
 // ---------- tutorial ----------
@@ -689,7 +756,7 @@ function runScene(name) {
     const p = fieldingTeam(g).pitcher; p.stats.pitches = Math.round(p.stamina * 1.05);
   }
 }
-function tutEnter() { const s = tutStep(); app.tut.stepPitches = 0; app.tut.advancing = false; if (s.scene) runScene(s.scene); }
+function tutEnter() { const s = tutStep(); app.tut.stepPitches = 0; app.tut.advancing = false; if (s.spot && s.spot.includes('data-set')) ui.sub = 'orders'; if (s.scene) runScene(s.scene); }
 function tutNext() {
   if (!app.tut) return;
   app.tut.step++;
@@ -829,6 +896,7 @@ document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const g = app.g, id = Number(el.dataset.id), d = el.dataset;
+  if (d.act.startsWith('fb') && FB.click(d.act, d)) return;
   switch (d.act) {
     case 'card': showCard(d.uid); return;
     case 'closecard': closeDialog(); return;
@@ -836,10 +904,13 @@ document.addEventListener('click', (e) => {
     case 'closescreen': closeScreen(); return;
     case 'guide': openGuide(); return;
     case 'startguide': openGuide(); return;
-    case 'startcontinue': app.screen = null; app.tab = app.g ? 'game' : (app.lg.day > 0 || app.lg.history.length ? 'season' : 'game'); render(); return;
-    case 'startexhibit': startExhibition(); return;
+    case 'pickbaseball': app.settings.sport = 'baseball'; app.screen = 'start'; persist(); render(); return;
+    case 'pickfootball': app.settings.sport = 'football'; app.screen = 'start'; persist(); render(); return;
+    case 'changesport': app.screen = 'sport'; render(); return;
+    case 'startcontinue': if (isFb()) { app.screen = null; app.tab = FB.hasGame() ? 'game' : (FB.status().cont ? 'season' : 'game'); render(); return; } app.screen = null; app.tab = app.g ? 'game' : (app.lg.day > 0 || app.lg.history.length ? 'season' : 'game'); render(); return;
+    case 'startexhibit': if (isFb()) { app.screen = null; FB.newExhibition(); return; } startExhibition(); return;
     case 'startdaily': startDaily(); return;
-    case 'starttut': startTutorial(); return;
+    case 'starttut': if (isFb()) { FB.startTutorial(); return; } startTutorial(); return;
     case 'introopen': app.introStep = 0; app.screen = 'intro'; render(); return;
     case 'intro': app.introStep = Number(d.i); render(); return;
     case 'introskip': finishIntro(false); return;
@@ -888,6 +959,7 @@ document.addEventListener('click', (e) => {
 
 const SETTING_SET = { level: Number, speed: String, theme: String, text: Number, visuals: String };
 document.addEventListener('change', (e) => {
+  if (FB.change(e)) return;
   const s = e.target.dataset;
   if (s.set && s.set in SETTING_SET) { app.settings[s.set] = SETTING_SET[s.set](e.target.value); applyPrefs(); persist(); render(); return; }
   if (s.set === 'tradeTeam') { ui.tradeTeam = Number(e.target.value); ui.tMine = ui.tTheirs = null; render(); return; }
@@ -905,9 +977,18 @@ document.addEventListener('change', (e) => {
   }
   ui[tg] = e.target.checked; ordersChanged(); render();
 });
+document.addEventListener('toggle', (e) => { const k = e.target.dataset && e.target.dataset.fold; if (k) ui.open[k] = e.target.open; }, true);
 $('card').addEventListener('click', (e) => { if (e.target === $('card')) closeDialog(); });
 
+const FB = createFootball({
+  $, seg, chk, fold, fx, teamCol,
+  settings: () => app.settings, persist: () => persist(), render: () => render(), toast: (m) => toast(m),
+  openDialog: (h) => openDialog(h), closeDialog: () => closeDialog(), confirm: (m) => confirm(m),
+  tab: () => app.tab, setTab: (t) => { app.tab = t; }, closeScreen: () => { app.screen = null; app.prevScreen = null; },
+  makeCam: () => createFbCam({ teamCol }),
+});
+
 boot();
-if (app.g && !app.g.over) app.tab = 'game';
+if (!isFb() && app.g && !app.g.over) app.tab = 'game';
 render();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
