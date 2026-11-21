@@ -394,6 +394,19 @@ function bipMeta(g, res, batter) {
   return { t, zone: +zone.toFixed(2), depth: +(depth + (res === 'HR' ? 0.08 : (depthR - 0.5) * 0.12)).toFixed(2), r: depthR, line };
 }
 
+// Per-game scouting data: how each pitch type has fared (keyed by the fielding side).
+function trackPitch(g, ev, fldSide) {
+  const p = ev.pitch;
+  if (!p) return;
+  const t = ((g.track ||= { home: { pt: {} }, away: { pt: {} } })[fldSide].pt[p.t] ||= { n: 0, wh: 0, cs: 0, fl: 0, b: 0, h: 0, o: 0 });
+  t.n++;
+  if (p.k === 'ball' || p.k === 'hbp') t.b++;
+  else if (p.k === 'called') t.cs++;
+  else if (p.k === 'whiff') t.wh++;
+  else if (p.k === 'foul') t.fl++;
+  else if (p.k === 'inplay') { if (['1B', '2B', '3B', 'HR'].includes(ev.result)) t.h++; else t.o++; }
+}
+
 function closePA(g, ev, result) {
   const bat = battingTeam(g);
   ev.result = result;
@@ -441,11 +454,14 @@ export function pitch(g, orders = {}) {
   const off = { swing: 'normal', ...(orders.off || {}) };
   const def = { approach: 'normal', depth: 'normal', ...(orders.def || {}) };
   const bat = battingTeam(g), pit = fieldingTeam(g).pitcher, batter = bat.lineup[bat.batIdx];
+  const fldSide = g.half === 'top' ? 'home' : 'away', batSide = fldSide === 'home' ? 'away' : 'home';
   const rng = g.rng, pa = g.pa, r0 = bat.runs;
   const ev = { kind: null, result: null, runs: 0, steal: null, bip: null, scored: [] };
   g.last = ev; g.scoredNow = []; g.lastDef = def;
   const finish = () => {
     ev.runs = bat.runs - r0; ev.scored = g.scoredNow.slice();
+    trackPitch(g, ev, fldSide);
+    if (ev.result && ev.type !== 'steal') (g.hist ||= []).push({ inn: g.inning, side: batSide, res: ev.result, runs: ev.runs, b: batter.uid }), g.hist.length > 160 && g.hist.shift();
     if (g.pa.pitches === 0) { g.wp.push(Math.round(winProb(g) * 1000) / 1000); if (g.wp.length > 140) g.wp.shift(); }
     return ev;
   };

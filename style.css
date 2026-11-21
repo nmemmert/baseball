@@ -316,3 +316,46 @@ main { gap:8px; }
 .bug .ab { white-space:nowrap; } .pball { font-style:normal; font-size:.7rem; margin-left:3px; }
 .fbdefrow .seg { gap:4px; } .fbdefrow .seg span { padding:4px 8px; font-size:.78rem; min-height:30px; line-height:20px; }
 .mu span { line-height:1.15; }
+
+/* ===== intel ===== */
+.intel h3 { margin:14px 0 6px; font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--blue); }
+.ins { display:grid; grid-template-columns:24px 1fr; gap:6px; padding:6px 8px; margin:4px 0; border-radius:10px; background:var(--bg2); border-left:3px solid var(--line2); font-size:.84rem; line-height:1.35; }
+.ins.good { border-left-color:var(--green); } .ins.bad { border-left-color:var(--strike); }
+.ins i { font-style:normal; text-align:center; } .ins span i { font-style:italic; color:var(--blue); }
+.lev { background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:8px 10px; margin-top:8px; }
+.levrow { display:flex; justify-content:space-between; font-size:.84rem; padding:2px 0; } .levrow.good b { color:var(--green); } .levrow.bad b { color:var(--strike); }
+.levmeter { height:6px; border-radius:3px; background:var(--track); margin:6px 0 4px; overflow:hidden; } .levmeter i { display:block; height:100%; background:var(--amber); }
+.camchip { position:absolute; top:6px; left:6px; right:6px; display:flex; flex-wrap:wrap; gap:4px; pointer-events:none; }
+.camchip span { background:rgba(6,20,44,.72); color:#fff; font-size:.62rem; font-weight:700; padding:2px 7px; border-radius:9px; backdrop-filter:blur(4px); }
+.camchip span.good { background:rgba(15,157,88,.82); } .camchip span.bad { background:rgba(213,0,50,.82); } .camchip span.warn { background:rgba(224,140,0,.9); }
+
+/* ===== graphics polish ===== */
+.crest, .face { display:block; flex:none; filter:drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+.who .face { width:46px; height:46px; }
+.cardhead { display:flex; gap:12px; align-items:center; }
+.bug { background:linear-gradient(135deg, color-mix(in srgb, var(--card2) 92%, #fff), var(--card)); box-shadow:0 8px 22px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.08); }
+.bug .side { gap:8px; }
+.bug .runs { transition:transform .2s; }
+.bug .runs.bump { animation:bump .65s ease; }
+@keyframes bump { 0% { transform:scale(1); } 28% { transform:scale(1.55); color:var(--amber); } 100% { transform:scale(1); } }
+section, .fold, .coachline { box-shadow:0 4px 16px rgba(0,0,0,.16); }
+button { transition:transform .08s ease, filter .12s ease, background .15s ease; }
+button:active:not(:disabled) { transform:scale(.97); }
+button.primary { background:linear-gradient(180deg, color-mix(in srgb, var(--red) 82%, #fff), var(--red)); box-shadow:0 4px 12px rgba(213,0,50,.35); }
+.ptabs button.on { box-shadow:0 2px 8px rgba(0,0,0,.25); }
+svg.cam { box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), 0 6px 18px rgba(0,0,0,.35); }
+.camwrap { border-radius:14px; overflow:hidden; }
+.lastplay { background:linear-gradient(90deg, color-mix(in srgb, var(--blue) 14%, var(--bg2)), var(--bg2)); }
+#view.fade > * { animation:fadeUp .28s ease both; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+.confetti { position:fixed; inset:0; pointer-events:none; z-index:60; overflow:hidden; }
+.confetti i { position:absolute; top:-16px; width:8px; height:14px; border-radius:2px; opacity:.95; animation:fall 3s linear forwards; }
+@keyframes fall { to { transform:translateY(112vh) rotate(760deg); } }
+.cam-dot { stroke-width:1.4; }
+.sportcard { box-shadow:0 10px 28px rgba(0,0,0,.35); transition:transform .15s ease; } .sportcard:active { transform:scale(.98); }
+@media (prefers-reduced-motion: reduce) { #view.fade > *, .bug .runs.bump, .intro-ic, .start-bg i, .s-ball { animation:none !important; } }
+.bug .mid small { white-space:nowrap; }
+.bug .crest { width:28px; height:28px; }
+.vs > div { min-width:0; } .vs small { overflow-wrap:anywhere; }
+.who .t b { white-space:normal; overflow:visible; } .who .tag { margin:2px 4px 0 0; }
+html, body { overflow-x:hidden; }
