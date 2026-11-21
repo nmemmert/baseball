@@ -31,7 +31,7 @@ export function createFootball(ctx) {
     if (!o) return;
     fb.lg = o.lg || null; fb.g = o.g || null; fb.kind = o.kind || null;
     if (fb.lg) attachRng(fb.lg);
-    if (fb.g) { fbReviveGame(fb.g); fb.g.wp ||= [0.5]; }
+    if (fb.g) { fbReviveGame(fb.g); fb.g.wp ||= [0.5]; fb.needsSync = true; }
   }
   const lg = () => (fb.lg ||= FL.createFbLeague());
   const mine = () => (fb.kind === 'season' && fb.g ? FL.fbUser(lg()) : fb.g ? fb.g.home : FL.fbUser(lg()));
@@ -355,7 +355,8 @@ export function createFootball(ctx) {
   }
   const topHtml = () => { const t = FL.fbUser(lg()), l = lg(); return `<h1>SKIP<b>PER</b></h1><small>🏈 ${t.name} · ${t.w}-${t.l}${t.t ? '-' + t.t : ''}${l.phase === 'regular' ? '' : l.phase === 'playoffs' ? ' · playoffs' : ''}</small>`; };
   function mount() {
-    const slot = $('fbcamslot'); if (slot) slot.appendChild(getCam().svg);
+    const slot = $('fbcamslot');
+    if (slot) { slot.appendChild(getCam().svg); if (fb.needsSync && fb.g) { getCam().update(fb.g); fb.needsSync = false; } }
     for (const e of document.querySelectorAll('.spot')) e.classList.remove('spot');
     if (fb.tut && ctx.tab() === 'game') { const sel = tStep().spot; const e = sel && document.querySelector(sel); if (e) (e.closest('label') || e).classList.add('spot'); }
   }
