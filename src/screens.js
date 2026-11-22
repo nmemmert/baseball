@@ -23,6 +23,7 @@ export function sportHtml(info) {
       <div class="sports">
         <button class="sportcard" data-act="pickbaseball"><span class="sp-ic">⚾</span><b>Baseball</b><span class="sp-d">Steal, bunt, change pitchers, set the defense. Pitch by pitch.</span><small>${info.bb}</small></button>
         <button class="sportcard" data-act="pickfootball"><span class="sp-ic">🏈</span><b>Football</b><span class="sp-d">Call the plays: runs, passes, 4th downs, the clock.</span><small>${info.fb}</small></button>
+        <button class="sportcard play" data-act="pickarcade"><span class="sp-ic">🎮</span><b>Football: You Play</b><span class="sp-d">No coaching. Run, throw, juke and tackle with your thumbs. 7-on-7, real time.</span><small>${info.ar || 'New'}</small></button>
       </div><small class="mute">You can switch sports any time from the title screen.</small></div></div>`;
 }
 

@@ -69,3 +69,19 @@ No dependencies, no build step. To install on iPhone, host it over HTTPS (this r
 - `src/football.js` (engine, AI coordinators, coach), `src/fbleague.js` (season), `src/fbcam.js` (field cam), `src/fbui.js` (football screens).
 - `src/main.js` — UI shell. `src/cam.js` — animated field cam. `src/coach.js` — suggestions and to-do. `src/screens.js` — title, intro, guide, tutorial script. `src/feedback.js` — sound + haptics. `src/store.js` — localStorage.
 - `sw.js` + `manifest.webmanifest` — PWA. Bump `VERSION` in `sw.js` if you change the shell file list.
+
+## Gridiron: football you play (not coach)
+
+A third option on the start screen, **Football: You Play**, is a real-time 7-on-7 game with no coaching menus in the way.
+Pick a play, then control the action with your thumbs:
+
+- **Move**: drag anywhere on the lower left (floating stick). **Sprint** is hold-to-run.
+- **Offence**: pick Inside Run, Outside Run, Quick Pass, Deep Pass or Screen (4th down adds Punt and Field Goal).
+  On passes you are the quarterback: tap a numbered button (or the player) to throw; the ring shows how open he is
+  (green, yellow, red). After a handoff or catch you carry the ball: **Juke** and **Stiff arm** beat tacklers.
+- **Defence**: pick Balanced, Blitz, Deep Zone or Stack the Box, then chase with the nearest defender. **Tackle** is a dive
+  (miss and you are down), **Switch** changes player, **Jump** swats or picks off a pass if timed right.
+- **Kicking**: field goals use a timing meter.
+- Four quarters (Short / Normal / Long), sudden-death overtime, three difficulty levels, a demo mode, and a saved win-loss record.
+
+The simulation (`src/arcade.js`) is DOM-free and covered by `test/arcade.test.js`; the canvas UI is `src/arcadeui.js`.

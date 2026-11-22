@@ -13,6 +13,7 @@ import { createFootball } from './fbui.js';
 import { createFbCam } from './fbcam.js';
 import { fx, react, prefs, initHaptics } from './feedback.js';
 import { crest, face } from './art.js';
+import { openArcade } from './arcadeui.js';
 
 const DEFAULTS = {
   sound: true, haptics: true, level: 1, theme: 'auto', text: 0, cvd: false, speed: 'normal', autoNext: false, autoLineup: false, seenTips: true, visuals: 'full', coach: true, introSeen: false, tutDone: false,
@@ -728,6 +729,9 @@ function render() {
 }
 
 // ---------- title / intro / guide screens ----------
+function arcadeRecord() {
+  try { const r = JSON.parse(localStorage.getItem('skipper-arcade-v1')) || {}; return r.w || r.l || r.t ? `Record ${r.w || 0}-${r.l || 0}${r.t ? `-${r.t}` : ''}` : 'Play now'; } catch { return 'Play now'; }
+}
 function renderScreen() {
   const box = $('screen');
   box.className = app.screen === 'start' || app.screen === 'sport' ? 'dark' : '';
@@ -737,7 +741,7 @@ function renderScreen() {
   else if (app.screen === 'guide') box.innerHTML = guideHtml(0, isFb() ? 'fb' : 'bb');
   else if (app.screen === 'sport') {
     const inSeason = app.lg.day > 0 || app.lg.history.length > 0 || app.lg.phase !== 'regular';
-    box.innerHTML = sportHtml({ bb: app.g ? 'Game in progress' : inSeason ? `Season ${app.lg.season} · ${t.w}-${t.l}` : 'New season', fb: FB.status().short });
+    box.innerHTML = sportHtml({ bb: app.g ? 'Game in progress' : inSeason ? `Season ${app.lg.season} · ${t.w}-${t.l}` : 'New season', fb: FB.status().short, ar: arcadeRecord() });
   } else if (isFb()) {
     const st = FB.status();
     box.innerHTML = startHtml({ cont: st.cont, label: st.cont ? st.label : 'Start season', hasDaily: false, dailyDone: false, fb: true });
@@ -936,6 +940,7 @@ document.addEventListener('click', (e) => {
     case 'guide': openGuide(); return;
     case 'startguide': openGuide(); return;
     case 'pickbaseball': app.settings.sport = 'baseball'; app.screen = 'start'; persist(); render(); return;
+    case 'pickarcade': openArcade({ onClose: () => { render(); } }); return;
     case 'pickfootball': app.settings.sport = 'football'; app.screen = 'start'; persist(); render(); return;
     case 'changesport': app.screen = 'sport'; render(); return;
     case 'startcontinue': if (isFb()) { app.screen = null; app.tab = FB.hasGame() ? 'game' : (FB.status().cont ? 'season' : 'game'); render(); return; } app.screen = null; app.tab = app.g ? 'game' : (app.lg.day > 0 || app.lg.history.length ? 'season' : 'game'); render(); return;
