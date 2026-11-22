@@ -475,3 +475,8 @@ html, body { overflow-x:hidden; }
 #arcade.hiking .ar-tipbar { display:none; }
 #arcade.land .ar-sheet.hike { left:auto; right:calc(10px + env(safe-area-inset-right)); width:30%; top:auto; bottom:10px; padding:0; background:none; }
 #arcade.land .ar-hk small { font-size:.72rem; text-shadow:0 1px 3px #000; } #arcade.land .ar-hk .ar-go { font-size:1.15rem; padding:12px; }
+
+/* landscape fill: field covers the whole screen, controls float over it */
+#arcade.land .ar-sz { width:46%; } #arcade.land .ar-btns { max-width:44%; }
+#arcade.land .ar-sheet.hike { width:34%; }
+#arcade.land .ar-tipbar { top:auto; bottom:128px; left:12px; right:auto; width:230px; text-align:left; font-size:.75rem; padding:6px 9px; }

@@ -63,7 +63,7 @@ export function openArcade({ onClose } = {}) {
     sig: '', bsig: '', ssig: '', raf: 0, last: 0, acc: 0, keys: {}, stick: { id: -1, ox: 0, oy: 0 }, tip: 0, held: {}, endSaved: false,
     mode: 'quick', oppIdx: 0, rbuf: [], rclip: null, rp: null, rtick: 0, lastPhase: '', drillDone: false, sawTD: false, f0: 0,
   };
-  S.rec.set = Object.assign({ lv: 1, ql: 240, st: 'm', bs: 'm', lh: 0, gs: 's' }, S.rec.set || {}); S.rec.tips = S.rec.tips || {};
+  S.rec.set = Object.assign({ lv: 1, ql: 240, st: 'm', bs: 'm', lh: 0, gs: 's', vw: 'f' }, S.rec.set || {}); S.rec.tips = S.rec.tips || {};
   const root = document.createElement('div'); root.id = 'arcade';
   root.innerHTML = `<canvas class="ar-cv"></canvas>
     <div class="ar-top"><div class="ar-sb"><span class="ar-tm" data-k="u"></span><b class="ar-sc" data-k="us">0</b><span class="ar-mid"><i data-k="q"></i><em data-k="sit"></em></span><b class="ar-sc" data-k="cs">0</b><span class="ar-tm" data-k="c"></span></div><button class="ar-x" data-a="pause" aria-label="Pause">❚❚</button></div>
@@ -133,6 +133,7 @@ export function openArcade({ onClose } = {}) {
       <div class="ar-opt"><span>Difficulty</span>${seg('lv', s.lv, LEVELS.map((l) => [l.name, l.id]))}</div>
       <div class="ar-opt"><span>Game length</span>${seg('ql', s.ql, QLEN.map(([n, v]) => [n, v]))}</div>
       <div class="ar-opt"><span>Game speed</span>${seg('gs', s.gs, [['Slower (easier)', 's'], ['Normal', 'n']])}</div>
+      <div class="ar-opt"><span>Landscape view</span>${seg('vw', s.vw, [['Fill the screen', 'f'], ['Wide (see more)', 'w']])}</div>
       <div class="ar-opt"><span>Stick size</span>${seg('st', s.st, [['Small', 's'], ['Medium', 'm'], ['Large', 'l']])}</div>
       <div class="ar-opt"><span>Button size</span>${seg('bs', s.bs, [['Small', 's'], ['Medium', 'm'], ['Large', 'l']])}</div>
       <div class="ar-opt"><span>Hand</span>${seg('lh', s.lh, [['Right-handed', 0], ['Left-handed', 1]])}</div>
@@ -276,6 +277,7 @@ export function openArcade({ onClose } = {}) {
     const k = a.dataset.a;
     if (k === 'hike') { if (S.g) S.g.in.hike = true; fx.tick(); }
     else if (k === 'backplays') { if (S.g) uncall(S.g); drawSheet(true); }
+    else if (k === 'vw') { S.rec.set.vw = a.dataset.v; store(S.rec); modal(menuHtml()); }
     else if (k === 'gs') { S.rec.set.gs = a.dataset.v; store(S.rec); modal(menuHtml()); }
     else if (k === 'st' || k === 'bs' || k === 'lh') { S.rec.set[k] = k === 'lh' ? +a.dataset.v : a.dataset.v; store(S.rec); applySet(); modal(menuHtml()); }
     else if (k === 'resume') resumeSaved(); else if (k === 'practice') startDrill(0);
@@ -333,14 +335,16 @@ export function openArcade({ onClose } = {}) {
   }
 
   /* ------------------------------------ drawing ------------------------------------ */
-  const scale = () => (land ? ch / 36 : cw / 30);
+  const fill = () => land && S.rec.set.vw !== 'w';
+  const scale = () => (land ? (fill() ? cw / (W + 2) : ch / 36) : cw / 30);
+  const anchor = () => (fill() ? 0.7 : 0.6);
   const sx = (x, sc) => cw / 2 + (x - S.camX) * sc;
-  const sy = (y, sc) => ch * 0.6 - (y - S.camY) * sc;
+  const sy = (y, sc) => ch * anchor() - (y - S.camY) * sc;
   function camTarget(g) {
     const car = g.carrier; let ty = g.los + 4, tx = 18;
     if (g.phase === 'live' || g.phase === 'dead') {
-      if (car) { ty = car.y + (g.turn ? -4 : 5); tx = car.x; }
-      else if (g.fl) { const f = clamp(g.fl.t / g.fl.dur, 0, 1); ty = g.fl.fy + (g.fl.ty - g.fl.fy) * f + 4; tx = g.fl.fx + (g.fl.tx - g.fl.fx) * f; }
+      if (car) { ty = car.y + (g.turn ? -2.5 : fill() ? 0.5 : 5); tx = car.x; }
+      else if (g.fl) { const f = clamp(g.fl.t / g.fl.dur, 0, 1); ty = g.fl.fy + (g.fl.ty - g.fl.fy) * f + (fill() ? 0.5 : 4); tx = g.fl.fx + (g.fl.tx - g.fl.fx) * f; }
       else if (g.pl.length) { const c = g.pl.reduce((a, p) => a + p.y, 0) / g.pl.length; ty = Math.max(g.los + 2, c); tx = S.camX; }
     }
     if (g.phase === 'call' || g.phase === 'set') ty = g.los - (g.phase === 'call' && !S.demo ? 0.3 : 0.12) * ch / scale() + 1;
@@ -349,7 +353,7 @@ export function openArcade({ onClose } = {}) {
   function shade(hex, f) { const n = parseInt(hex.slice(1), 16); let r = (n >> 16) & 255, gg = (n >> 8) & 255, b = n & 255; r = clamp(Math.round(r * f), 0, 255); gg = clamp(Math.round(gg * f), 0, 255); b = clamp(Math.round(b * f), 0, 255); return `rgb(${r},${gg},${b})`; }
 
   function drawField(g, sc) {
-    const top = S.camY + (ch * 0.6) / sc + 2, bot = S.camY - (ch * 0.4) / sc - 2;
+    const top = S.camY + (ch * anchor()) / sc + 2, bot = S.camY - (ch * (1 - anchor())) / sc - 2;
     ctx.fillStyle = '#0b3b22'; ctx.fillRect(0, 0, cw, ch);
     const x0 = sx(0, sc), x1 = sx(W, sc);
     for (let y = Math.floor(bot / 5) * 5; y < top; y += 5) {
@@ -379,7 +383,7 @@ export function openArcade({ onClose } = {}) {
   }
 
   function drawPlayer(g, p, sc, ctl) {
-    const x = sx(p.x, sc), y = sy(p.y, sc), r = sc * 1.08;
+    const x = sx(p.x, sc), y = sy(p.y, sc), r = sc * (fill() ? 0.82 : 1.08);
     if (x < -40 || x > cw + 40) return;
     const col = g.col[p.team], fa = Math.atan2(-p.vy, p.vx || 0.0001), moving = Math.hypot(p.vx, p.vy) > 0.5;
     const ang = moving ? -Math.atan2(p.vy, p.vx) : (p.side === 'O' ? -Math.PI / 2 : Math.PI / 2); void fa;
@@ -404,6 +408,7 @@ export function openArcade({ onClose } = {}) {
     if (S.demo || g.mode !== 'drop' || g.off !== 'U') return;
     targets(g).forEach((t, i) => {
       const x = sx(t.x, sc), y = sy(t.y, sc), o = g.open[t.id] ?? 0, col = ['#ff4d5e', '#ffd33d', '#3ddc84'][o];
+      if (y < 74) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x, 66); ctx.lineTo(x - 13, 86); ctx.lineTo(x + 13, 86); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#10151f'; ctx.font = '900 14px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label(String(i + 1), x, 80); return; }
       ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, sc * 1.35, 0, 6.3); ctx.stroke();
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y - sc * 2.4, sc * 0.85, 0, 6.3); ctx.fill();
       ctx.fillStyle = '#10151f'; ctx.font = `900 ${sc * 1.15}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label(String(i + 1), x, y - sc * 2.4 + 1);
