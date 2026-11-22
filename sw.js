@@ -1,5 +1,5 @@
 // Offline-first service worker (stale-while-revalidate). Bump VERSION when the shell file list changes.
-const VERSION = 'skipper-v7';
+const VERSION = 'skipper-v8';
 const SHELL = ['./', 'index.html', 'style.css', 'src/main.js', 'src/engine.js', 'src/league.js', 'src/store.js', 'src/feedback.js', 'src/coach.js', 'src/cam.js', 'src/screens.js', 'src/football.js', 'src/fbleague.js', 'src/fbcam.js', 'src/fbui.js', 'src/arcade.js', 'src/arcadeui.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 

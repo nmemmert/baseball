@@ -419,3 +419,16 @@ html, body { overflow-x:hidden; }
 .ar-how { text-align:left; } .ar-how h2 { margin:0 0 4px; text-align:center; } .ar-how h3 { margin:6px 0 0; font-size:.95rem; color:#ffd33d; } .ar-how p { margin:0; font-size:.88rem; color:#dbe6fb; line-height:1.4; }
 .ar-final { display:flex; align-items:center; justify-content:center; gap:10px; font-size:.9rem; } .ar-final b { font-size:2.3rem; } .ar-final span { max-width:28%; font-weight:700; }
 .ar-stats { width:100%; border-collapse:collapse; font-size:.85rem; } .ar-stats td, .ar-stats th { padding:5px 4px; border-bottom:1px solid rgba(255,255,255,.1); } .ar-stats td:first-child { text-align:left; color:#b3c4e4; }
+
+/* landscape: play runs left to right, controls on the sides, call sheet as a side panel */
+#arcade.land .ar-sz { width:44%; top:56px; height:auto; }
+#arcade.land .ar-btns { display:flex; flex-wrap:wrap; justify-content:flex-end; max-width:56%; gap:8px; right:calc(14px + env(safe-area-inset-right)); bottom:calc(10px + env(safe-area-inset-bottom)); }
+#arcade.land .ar-b, #arcade.land .ar-b.big, #arcade.land .ar-btns.n6 .ar-b { width:58px; height:58px; } #arcade.land .ar-b small { font-size:.5rem; } #arcade.land .ar-b span { font-size:1.35rem; }
+#arcade.land .ar-top { padding-left:calc(10px + env(safe-area-inset-left)); padding-right:calc(10px + env(safe-area-inset-right)); }
+#arcade.land .ar-sb { max-width:520px; }
+#arcade.land .ar-tipbar { top:calc(64px + env(safe-area-inset-top)); left:25%; right:25%; }
+#arcade.land .ar-bn { top:30%; }
+#arcade.land .ar-sheet.call { left:auto; width:54%; top:calc(56px + env(safe-area-inset-top)); bottom:0; overflow:auto; padding:6px calc(12px + env(safe-area-inset-right)) 8px 22px; background:linear-gradient(90deg,rgba(6,20,44,0),rgba(6,20,44,.94) 16%); }
+#arcade.land .ar-cards { gap:6px; } #arcade.land .ar-pc { min-height:48px; padding:6px 8px; } #arcade.land .ar-pc small { display:none; } #arcade.land .ar-pc i { font-size:1.3rem; }
+#arcade.land .ar-hl { font-size:.75rem; padding:3px 6px; margin-bottom:4px; } #arcade.land .ar-sitrow { margin-bottom:3px; }
+#arcade.land .ar-modal { align-items:start; }

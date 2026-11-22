@@ -37,9 +37,15 @@ export function openArcade({ onClose } = {}) {
   document.body.appendChild(root);
   const $ = (s) => root.querySelector(s), cv = $('.ar-cv'), ctx = cv.getContext('2d');
   const q = (k) => root.querySelector(`[data-k="${k}"]`);
-  let cw = 0, ch = 0, dpr = 1;
-  const resize = () => { dpr = Math.min(2, window.devicePixelRatio || 1); cw = root.clientWidth; ch = root.clientHeight; cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
-  resize(); window.addEventListener('resize', resize);
+  // cw/ch are the *virtual* (portrait) size the field is drawn in; in landscape the canvas is rotated so the play runs left to right.
+  let cw = 0, ch = 0, rw = 0, rh = 0, dpr = 1, land = false;
+  const resize = () => {
+    dpr = Math.min(2, window.devicePixelRatio || 1); rw = root.clientWidth; rh = root.clientHeight; land = rw > rh; cw = land ? rh : rw; ch = land ? rw : rh;
+    cv.width = Math.round(rw * dpr); cv.height = Math.round(rh * dpr); root.classList.toggle('land', land);
+    if (land) ctx.setTransform(0, dpr, -dpr, 0, rw * dpr, 0); else ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  const label = (str, x, y, stroke) => { ctx.save(); ctx.translate(x, y); if (land) ctx.rotate(-Math.PI / 2); if (stroke) ctx.strokeText(str, 0, 0); ctx.fillText(str, 0, 0); ctx.restore(); };
+  resize(); window.addEventListener('resize', resize); window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 
   /* ---------------------------------- game control ---------------------------------- */
   const myCol = '#2b6cb0';
@@ -156,7 +162,7 @@ export function openArcade({ onClose } = {}) {
   sz.addEventListener('pointermove', (e) => {
     if (e.pointerId !== S.stick.id) return; e.preventDefault();
     let dx = e.clientX - S.stick.ox, dy = e.clientY - S.stick.oy; const m = Math.hypot(dx, dy) || 1, k = Math.min(1, m / R);
-    setStick((dx / m) * k, -(dy / m) * k);
+    if (land) setStick((dy / m) * k, (dx / m) * k); else setStick((dx / m) * k, -(dy / m) * k);
     const r = sz.getBoundingClientRect(), kx = S.stick.ox - r.left + (dx / m) * Math.min(m, R) - 22, ky = S.stick.oy - r.top + (dy / m) * Math.min(m, R) - 22;
     knob.style.left = `${kx}px`; knob.style.top = `${ky}px`;
   });
@@ -166,7 +172,7 @@ export function openArcade({ onClose } = {}) {
   // tap the field to throw to the nearest receiver
   cv.addEventListener('pointerdown', (e) => {
     const g = S.g; if (!g || S.view !== 'game' || S.demo || g.mode !== 'drop' || g.off !== 'U') return;
-    const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top, sc = scale();
+    const r = cv.getBoundingClientRect(), rx = e.clientX - r.left, ry = e.clientY - r.top, px = land ? ry : rx, py = land ? rw - rx : ry, sc = scale();
     let best = -1, bd = 5.5; targets(g).forEach((t, i) => { const d = Math.hypot((sx(t.x, sc) - px) / sc, (sy(t.y, sc) - py) / sc); if (d < bd) { bd = d; best = i; } });
     if (best >= 0) g.in.throw = best;
   });
@@ -179,7 +185,7 @@ export function openArcade({ onClose } = {}) {
     if (k === 'shift') g.in.sprint = true; keyStick();
   };
   const ku = (e) => { const k = e.key.toLowerCase(); S.keys[k] = false; if (k === 'shift' && S.g) S.g.in.sprint = false; keyStick(); };
-  function keyStick() { const g = S.g; if (!g || S.stick.id >= 0) return; const K = S.keys; const x = (K.d || K.arrowright ? 1 : 0) - (K.a || K.arrowleft ? 1 : 0), y = (K.w || K.arrowup ? 1 : 0) - (K.s || K.arrowdown ? 1 : 0), m = Math.hypot(x, y) || 1; g.in.mx = x / m * (x || y ? 1 : 0); g.in.my = y / m * (x || y ? 1 : 0); }
+  function keyStick() { const g = S.g; if (!g || S.stick.id >= 0) return; const K = S.keys; const h = (K.d || K.arrowright ? 1 : 0) - (K.a || K.arrowleft ? 1 : 0), v = (K.w || K.arrowup ? 1 : 0) - (K.s || K.arrowdown ? 1 : 0); const x = land ? -v : h, y = land ? h : v, m = Math.hypot(x, y) || 1; g.in.mx = (x / m) * (x || y ? 1 : 0); g.in.my = (y / m) * (x || y ? 1 : 0); }
   window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);
 
   /* --------------------------------- clicks (DOM) --------------------------------- */
@@ -243,7 +249,7 @@ export function openArcade({ onClose } = {}) {
       else if (g.fl) { const f = clamp(g.fl.t / g.fl.dur, 0, 1); ty = g.fl.fy + (g.fl.ty - g.fl.fy) * f + 4; tx = g.fl.fx + (g.fl.tx - g.fl.fx) * f; }
       else if (g.pl.length) { const c = g.pl.reduce((a, p) => a + p.y, 0) / g.pl.length; ty = Math.max(g.los + 2, c); tx = S.camX; }
     }
-    if (g.phase === 'call' || g.phase === 'set') ty = g.los - (g.phase === 'call' && !S.demo ? 0.3 : 0.12) * ch / scale() + 1;
+    if (g.phase === 'call' || g.phase === 'set') ty = land ? g.los + (g.phase === 'call' && !S.demo ? 0.2 : 0.05) * ch / scale() : g.los - (g.phase === 'call' && !S.demo ? 0.3 : 0.12) * ch / scale() + 1;
     return { x: clamp(tx, 15, W - 15), y: clamp(ty, g.phase === 'call' ? 0 : 22, LEN - 24) };
   }
   function shade(hex, f) { const n = parseInt(hex.slice(1), 16); let r = (n >> 16) & 255, gg = (n >> 8) & 255, b = n & 255; r = clamp(Math.round(r * f), 0, 255); gg = clamp(Math.round(gg * f), 0, 255); b = clamp(Math.round(b * f), 0, 255); return `rgb(${r},${gg},${b})`; }
@@ -258,13 +264,13 @@ export function openArcade({ onClose } = {}) {
     }
     // end zones
     const defT = g.off === 'U' ? 'C' : 'U', attack = g.col[defT], own = g.col[g.off];
-    const ez = (ya, yb, col, name) => { const a = sy(yb, sc), b = sy(ya, sc); ctx.fillStyle = shade(col, 0.82); ctx.fillRect(x0, a, x1 - x0, b - a); ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.font = `900 ${sc * 3}px system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(name.toUpperCase().slice(0, 12), (x0 + x1) / 2, (a + b) / 2); };
+    const ez = (ya, yb, col, name) => { const a = sy(yb, sc), b = sy(ya, sc); ctx.fillStyle = shade(col, 0.82); ctx.fillRect(x0, a, x1 - x0, b - a); ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.font = `900 ${sc * 3}px system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label(name.toUpperCase().slice(0, 12), (x0 + x1) / 2, (a + b) / 2); };
     ez(GOAL, LEN, attack, g.names[defT]); ez(0, EZ, own, g.names[g.off]);
     // yard lines + numbers
     ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.5; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     for (let y = EZ; y <= GOAL; y += 5) {
       if (y > top || y < bot) continue; const yy = sy(y, sc); ctx.globalAlpha = (y === EZ || y === GOAL) ? 1 : (y - EZ) % 10 === 0 ? 0.7 : 0.4; ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x1, yy); ctx.stroke(); ctx.globalAlpha = 1;
-      const f = y - EZ; if (f % 10 === 0 && f > 0 && f < 100) { const n = Math.min(f, 100 - f); ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.font = `800 ${sc * 2.1}px system-ui,sans-serif`; ctx.fillText(String(n), sx(5.5, sc), yy - sc * 2.2); ctx.fillText(String(n), sx(W - 5.5, sc), yy - sc * 2.2); }
+      const f = y - EZ; if (f % 10 === 0 && f > 0 && f < 100) { const n = Math.min(f, 100 - f); ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.font = `800 ${sc * 2.1}px system-ui,sans-serif`; label(String(n), sx(5.5, sc), yy - sc * 2.2); label(String(n), sx(W - 5.5, sc), yy - sc * 2.2); }
     }
     ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1;
     for (let y = Math.ceil(EZ); y <= GOAL; y++) { if (y > top || y < bot || y % 5 === 0) continue; const yy = sy(y, sc); ctx.beginPath(); ctx.moveTo(sx(17, sc), yy); ctx.lineTo(sx(19, sc), yy); ctx.moveTo(x0, yy); ctx.lineTo(x0 + sc * 0.6, yy); ctx.moveTo(x1 - sc * 0.6, yy); ctx.lineTo(x1, yy); ctx.stroke(); }
@@ -293,7 +299,7 @@ export function openArcade({ onClose } = {}) {
     // helmet
     const g2 = ctx.createRadialGradient(x - r * 0.2, y - r * 0.25, r * 0.1, x, y, r * 0.62); g2.addColorStop(0, shade(col, 1.45)); g2.addColorStop(1, shade(col, 0.9));
     ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(x, y, r * 0.55, 0, 6.3); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.3; ctx.stroke();
-    if (p.stun > 0.1 && p.team !== (g.carrier && g.carrier.team)) { ctx.fillStyle = '#fff'; ctx.font = `${r}px system-ui`; ctx.textAlign = 'center'; ctx.fillText('✦', x, y - r * 1.2); }
+    if (p.stun > 0.1 && p.team !== (g.carrier && g.carrier.team)) { ctx.fillStyle = '#fff'; ctx.font = `${r}px system-ui`; ctx.textAlign = 'center'; label('✦', x, y - r * 1.2); }
     if (p === ctl) { // controlled marker
       ctx.strokeStyle = '#ffd33d'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, r * 1.35, 0, 6.3); ctx.stroke();
       ctx.fillStyle = '#ffd33d'; ctx.beginPath(); ctx.moveTo(x, y - r * 2.3); ctx.lineTo(x - r * 0.5, y - r * 1.65); ctx.lineTo(x + r * 0.5, y - r * 1.65); ctx.closePath(); ctx.fill();
@@ -305,7 +311,7 @@ export function openArcade({ onClose } = {}) {
       const x = sx(t.x, sc), y = sy(t.y, sc), o = g.open[t.id] ?? 0, col = ['#ff4d5e', '#ffd33d', '#3ddc84'][o];
       ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, sc * 1.35, 0, 6.3); ctx.stroke();
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y - sc * 2.4, sc * 0.85, 0, 6.3); ctx.fill();
-      ctx.fillStyle = '#10151f'; ctx.font = `900 ${sc * 1.15}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), x, y - sc * 2.4 + 1);
+      ctx.fillStyle = '#10151f'; ctx.font = `900 ${sc * 1.15}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label(String(i + 1), x, y - sc * 2.4 + 1);
     });
   }
   function drawBall(g, sc) {
@@ -320,7 +326,7 @@ export function openArcade({ onClose } = {}) {
   function drawFx(sc, dt) {
     for (const p of S.parts) { p.a += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy -= (p.l > 1 ? 8 : 0) * dt; ctx.globalAlpha = clamp(1 - p.a / p.l, 0, 1); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(sx(p.x, sc), sy(p.y, sc), p.r * sc, 0, 6.3); ctx.fill(); }
     ctx.globalAlpha = 1; S.parts = S.parts.filter((p) => p.a < p.l);
-    for (const p of S.pops) { p.a += dt; const k = p.a / 1.0; ctx.globalAlpha = clamp(1.4 - k * 1.4, 0, 1); ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 3; ctx.font = `900 ${sc * 1.1}px system-ui`; ctx.textAlign = 'center'; const x = sx(p.x, sc), y = sy(p.y, sc) - sc * (2.5 + k * 2); ctx.strokeText(p.t, x, y); ctx.fillText(p.t, x, y); }
+    for (const p of S.pops) { p.a += dt; const k = p.a / 1.0; ctx.globalAlpha = clamp(1.4 - k * 1.4, 0, 1); ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 3; ctx.font = `900 ${sc * 1.1}px system-ui`; ctx.textAlign = 'center'; const x = sx(p.x, sc), y = sy(p.y, sc) - sc * (2.5 + k * 2); label(p.t, x, y, true); }
     ctx.globalAlpha = 1; S.pops = S.pops.filter((p) => p.a < 1);
   }
 
