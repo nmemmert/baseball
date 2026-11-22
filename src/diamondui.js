@@ -3,6 +3,7 @@ import {
   newDiamond, step, throwPitch, swing, toggleSteal, decide, ballAt, userBatting, userPitching, batTeam, fieldTeam, PITCHES, LEVELS, TEAMS, ZONE, POS, BAG, fenceAt,
 } from './diamond.js';
 import { fx } from './feedback.js';
+import { newSeason, nextGame, standings, applyUserResult, simUserGame, simToEnd, totalRounds, userRank } from './diamondseason.js';
 
 const KEY = 'skipper-diamond-v1';
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
@@ -24,10 +25,10 @@ export const DIAMOND_HOW = [
 export function openDiamond({ onClose } = {}) {
   const S = {
     rec: load(), view: 'menu', g: null, demo: false, paused: false, banner: null, bannerT: 0, shake: 0, parts: [], raf: 0, last: 0, acc: 0,
-    cur: { x: 0, y: 0 }, pm: { type: 'FB', tx: 0, ty: 0, meter: null }, pad: { id: -1 }, endSaved: false, flash: 0, tipSeen: S_tips(),
+    cur: { x: 0, y: 0 }, pm: { type: 'FB', tx: 0, ty: 0, meter: null }, pad: { id: -1 }, mode: 'quick', endSaved: false, flash: 0, tipSeen: S_tips(),
   };
   function S_tips() { return {}; }
-  S.rec.set = Object.assign({ lv: 1, inn: 5, lh: 0 }, S.rec.set || {});
+  S.rec.set = Object.assign({ lv: 1, inn: 5, lh: 0, sg: 7 }, S.rec.set || {});
   const root = document.createElement('div'); root.id = 'diamond';
   root.innerHTML = `<canvas class="dm-cv"></canvas>
     <div class="dm-top"><div class="dm-sb"><div class="dm-tm"><b data-k="u"></b><em data-k="us">0</em></div><div class="dm-mid"><i data-k="inn"></i><span class="dm-outs" data-k="outs"></span><span class="dm-cnt" data-k="cnt"></span></div><div class="dm-tm r"><em data-k="cs">0</em><b data-k="c"></b></div><div class="dm-bases" data-k="bases"><i class="b2"></i><i class="b3"></i><i class="b1"></i></div></div><button class="dm-x" data-a="pause" aria-label="Pause">❚❚</button></div>
@@ -41,8 +42,8 @@ export function openDiamond({ onClose } = {}) {
   resize(); window.addEventListener('resize', resize);
 
   /* ------------------------------------ flow ------------------------------------ */
-  function start(demo) {
-    const opp = TEAMS[Math.floor(Math.random() * TEAMS.length)];
+  function start(demo, o = {}) {
+    const opp = o.opp || TEAMS[Math.floor(Math.random() * TEAMS.length)]; S.mode = o.mode || 'quick';
     S.g = newDiamond({ level: S.rec.set.lv, innings: S.rec.set.inn, opp, name: 'Skipper', col: '#2b6cb0', auto: demo, seed: (Math.random() * 2 ** 31) | 0 });
     S.demo = demo; S.view = 'game'; S.paused = false; S.endSaved = false; S.banner = null; S.parts = []; S.pm.meter = null; S.csig = ''; modal('');
     root.classList.toggle('lefty', !!S.rec.set.lh);
@@ -57,12 +58,35 @@ export function openDiamond({ onClose } = {}) {
   function menuHtml() {
     const s = S.rec.set;
     return `<div class="dm-card"><div class="dm-logo">DIAMOND</div><p class="dm-sub">Baseball you actually play. Swing, pitch, throw, run.</p>
-      <button class="dm-go" data-a="play">▶ Play a game</button>
+      <button class="dm-go" data-a="play">▶ Quick game</button>
+      <button data-a="season">🏆 ${S.rec.season ? (S.rec.season.stage === 'done' ? 'Season complete' : `Season: ${S.rec.season.stage === 'reg' ? `game ${S.rec.season.rd + 1} of ${totalRounds(S.rec.season)}` : 'playoffs'} (${S.rec.season.teams[0].w}-${S.rec.season.teams[0].l})`) : 'Season mode'}${S.rec.titles ? ` · ${S.rec.titles}🏆` : ''}</button>
       <div class="dm-row"><button data-a="demo">👀 Watch a demo</button><button data-a="how">📖 How to play</button></div>
       <div class="dm-opt"><span>Difficulty</span>${seg('lv', s.lv, LEVELS.map((l) => [l.name, l.id]))}</div>
       <div class="dm-opt"><span>Length</span>${seg('inn', s.inn, INN.map(([n, v]) => [n, v]))}</div>
       <div class="dm-opt"><span>Hand</span>${seg('lh', s.lh, [['Right-handed', 0], ['Left-handed', 1]])}</div>
       <p class="dm-rec">Record: <b>${rec()}</b>${S.rec.hr ? ` · career HR ${S.rec.hr}` : ''}</p><button class="dm-link" data-a="exit">← Back to Skipper</button></div>`;
+  }
+  const strStars = (t) => '★'.repeat(clamp(Math.round((t.str - 0.88) / 0.05), 1, 5)) + '☆'.repeat(5 - clamp(Math.round((t.str - 0.88) / 0.05), 1, 5));
+  function seasonHtml() {
+    const se = S.rec.season;
+    if (!se) return `<div class="dm-card"><div class="dm-logo sm">🏆 Season</div><p class="dm-sub">Eight teams play each other. The top four go to a single-game playoff. Win the final for the title.</p>${seg('sg', S.rec.set.sg, [['7 games', 7], ['14 games', 14]])}<button class="dm-go" data-a="seasonnew">Start a season</button><button data-a="menu">Back</button></div>`;
+    const st = standings(se), ng = nextGame(se), me = se.teams[0], s2 = se.stats;
+    const rows = st.map((t, i) => `<tr class="${t.id === 0 ? 'me' : ''} ${i === 3 && se.stage === 'reg' ? 'cut' : ''}"><td>${i + 1}</td><td><i class="dm-sw" style="background:${t.col}"></i>${esc(t.name)}</td><td>${t.w}-${t.l}</td><td>${t.rs - t.ra > 0 ? '+' : ''}${t.rs - t.ra}</td></tr>`).join('');
+    let mid = '';
+    if (se.stage === 'done') mid = `<div class="dm-champ">${se.champ === 0 ? '🏆 YOU WON THE TITLE!' : `${esc(se.teams[se.champ].name)} are champions`}<small>${esc(se.userFinish)} · you finished ${me.w}-${me.l}, rank ${userRank(se)}</small></div>`;
+    else if (ng) { const o = se.teams[ng.opp]; mid = `<div class="dm-next"><small>${esc(ng.label)}</small><b>vs ${esc(o.name)}</b><span>${strStars(o)} · ${o.w}-${o.l}</span></div>`; }
+    const po = se.stage === 'semi' || se.stage === 'final' ? `<p class="dm-sub">Playoffs: ${se.po.semi.map((m) => `${esc(se.teams[m.a].name.split(' ').pop())} v ${esc(se.teams[m.b].name.split(' ').pop())}${m.w != null ? ` → ${esc(se.teams[m.w].name.split(' ').pop())}` : ''}`).join(' · ')}</p>` : '';
+    const stats = `<p class="dm-sub">In games you played: ${s2.ab ? (s2.h / s2.ab).toFixed(3).replace(/^0/, '') : '.000'} avg · ${s2.hr} HR · ${s2.sb} SB · ${s2.k} K thrown · runs ${s2.rs}-${s2.ra}</p>`;
+    const btns = se.stage === 'done' ? `<button class="dm-go" data-a="seasonquit">Start a new season</button><button data-a="menu">Menu</button>`
+      : `<button class="dm-go" data-a="seasonplay">▶ Play this game</button><div class="dm-row"><button data-a="seasonsim">⏩ Sim it</button><button data-a="seasonend">⏭ Sim to the end</button></div><div class="dm-row"><button data-a="menu">Menu</button><button class="dm-link" data-a="seasonquit">Abandon season</button></div>`;
+    return `<div class="dm-card dm-season"><div class="dm-logo sm">🏆 Season ${esc(se.stage === 'reg' ? '' : se.stage === 'done' ? '· over' : '· playoffs')}</div>${mid}<table class="dm-stand"><tr><td></td><td>Team</td><td>W-L</td><td>+/-</td></tr>${rows}</table>${po}${stats}${btns}</div>`;
+  }
+  function seasonResult(g) {
+    const se = S.rec.season; if (!se) return;
+    const r = applyUserResult(se, { us: g.score.U, them: g.score.C, innings: g.innings, stat: { ab: g.stat.U.ab, h: g.stat.U.h, hr: g.stat.U.hr, sb: g.stat.U.sb, k: g.stat.U.k } });
+    S.seasonMsg = r;
+    if (se.stage === 'done' && !se.counted) { se.counted = true; if (se.champ === 0) S.rec.titles = (S.rec.titles || 0) + 1; }
+    store(S.rec);
   }
   const howHtml = () => `<div class="dm-card dm-how"><h2>How to play</h2>${DIAMOND_HOW.map(([h, t]) => `<h3>${h}</h3><p>${t}</p>`).join('')}<button class="dm-go" data-a="menu">Got it</button></div>`;
   function finalHtml(g) {
@@ -70,7 +94,7 @@ export function openDiamond({ onClose } = {}) {
     const row = (t) => `<tr><td>${esc(g.names[t])}</td>${Array.from({ length: n }, (_, i) => `<td>${g.byInning[t][i] ?? (t === 'C' && i === n - 1 && g.half === 'top' ? '–' : 0)}</td>`).join('')}<th>${g.score[t]}</th><td>${g.stat[t].h}</td></tr>`;
     return `<div class="dm-card"><div class="dm-logo sm">${head}</div><table class="dm-line"><tr><td></td>${Array.from({ length: n }, (_, i) => `<td>${i + 1}</td>`).join('')}<th>R</th><td>H</td></tr>${row('U')}${row('C')}</table>
       <p class="dm-sub">Your hitters: ${g.stat.U.h} hits, ${g.stat.U.hr} HR, ${g.stat.C.k} strikeouts thrown, ${g.stat.U.sb} steals. Double plays turned: ${g.stat.C.dp}.</p>
-      <button class="dm-go" data-a="play">↻ Play again</button><button data-a="menu">Menu</button></div>`;
+      ${S.mode === 'season' ? `<button class="dm-go" data-a="season">🏆 Back to the season</button>` : `<button class="dm-go" data-a="play">↻ Play again</button>`}<button data-a="menu">Menu</button></div>`;
   }
   modal(menuHtml());
 
@@ -110,7 +134,14 @@ export function openDiamond({ onClose } = {}) {
     if (k === 'lv') { S.rec.set.lv = +a.dataset.v; store(S.rec); modal(menuHtml()); }
     else if (k === 'inn') { S.rec.set.inn = +a.dataset.v; store(S.rec); modal(menuHtml()); }
     else if (k === 'lh') { S.rec.set.lh = +a.dataset.v; store(S.rec); modal(menuHtml()); root.classList.toggle('lefty', !!S.rec.set.lh); }
-    else if (k === 'play') start(false); else if (k === 'demo') start(true);
+    else if (k === 'sg') { S.rec.set.sg = +a.dataset.v; store(S.rec); modal(seasonHtml()); }
+    else if (k === 'season') modal(seasonHtml());
+    else if (k === 'seasonnew') { S.rec.season = newSeason((Math.random() * 2 ** 31) | 0, S.rec.set.sg); store(S.rec); modal(seasonHtml()); }
+    else if (k === 'seasonquit') { S.rec.season = null; store(S.rec); modal(seasonHtml()); }
+    else if (k === 'seasonplay') { const se = S.rec.season, ng = se && nextGame(se); if (ng) start(false, { opp: se.teams[ng.opp], mode: 'season' }); }
+    else if (k === 'seasonsim') { const se = S.rec.season; if (se) { simUserGame(se, S.rec.set.inn); if (se.stage === 'done' && !se.counted) { se.counted = true; if (se.champ === 0) S.rec.titles = (S.rec.titles || 0) + 1; } store(S.rec); modal(seasonHtml()); } }
+    else if (k === 'seasonend') { const se = S.rec.season; if (se) { simToEnd(se, S.rec.set.inn); if (!se.counted) { se.counted = true; if (se.champ === 0) S.rec.titles = (S.rec.titles || 0) + 1; } store(S.rec); modal(seasonHtml()); } }
+    else if (k === 'play') { start(false); } else if (k === 'demo') start(true);
     else if (k === 'how') modal(howHtml()); else if (k === 'menu') { S.view = 'menu'; S.g = null; S.paused = false; modal(menuHtml()); drawCtl(); }
     else if (k === 'exit') quit(); else if (k === 'pause') { if (S.view === 'game') setPause(!S.paused); else if (S.view === 'menu') quit(); }
     else if (k === 'resume') setPause(false); else if (k === 'quit2') { S.view = 'menu'; S.g = null; S.paused = false; modal(menuHtml()); drawCtl(); }
@@ -256,7 +287,11 @@ export function openDiamond({ onClose } = {}) {
   }
   function finishGame(g) {
     if (S.view !== 'game' || S.g !== g) return;
-    if (!S.demo && !S.endSaved) { S.endSaved = true; const r = S.rec; if (g.winner === 'U') r.w = (r.w || 0) + 1; else if (g.winner === 'C') r.l = (r.l || 0) + 1; else r.t = (r.t || 0) + 1; r.hr = (r.hr || 0) + g.stat.U.hr; store(r); setTimeout(g.winner === 'U' ? fx.win : fx.lose, 200); }
+    if (!S.demo && !S.endSaved) {
+      S.endSaved = true; const r = S.rec;
+      if (S.mode === 'season') seasonResult(g); else { if (g.winner === 'U') r.w = (r.w || 0) + 1; else if (g.winner === 'C') r.l = (r.l || 0) + 1; else r.t = (r.t || 0) + 1; }
+      r.hr = (r.hr || 0) + g.stat.U.hr; store(r); setTimeout(g.winner === 'U' ? fx.win : fx.lose, 200);
+    }
     if (S.demo) { S.view = 'menu'; modal(menuHtml()); return; }
     modal(finalHtml(g));
   }

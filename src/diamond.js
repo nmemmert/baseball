@@ -15,7 +15,7 @@ export const LEVELS = [
 ];
 export const TEAMS = [
   { name: 'Harbor Hawks', col: '#c0392b' }, { name: 'Prairie Bison', col: '#9a6a34' }, { name: 'Bay Sharks', col: '#139a98' },
-  { name: 'Mesa Scorpions', col: '#e0701f' }, { name: 'Capital Wolves', col: '#7b4bc2' }, { name: 'Lakeshore Gulls', col: '#cfd6e2' },
+  { name: 'Mesa Scorpions', col: '#e0701f' }, { name: 'Capital Wolves', col: '#7b4bc2' }, { name: 'Lakeshore Gulls', col: '#cfd6e2' }, { name: 'Steel City Forge', col: '#d9a21b' },
 ];
 export const BAG = [[63.6, 63.6], [0, 127.3], [-63.6, 63.6]], HOME = [0, 0];
 export const POS = { P: [0, 60], '1B': [66, 84], '2B': [34, 126], SS: [-34, 126], '3B': [-66, 84], LF: [-150, 275], CF: [0, 305], RF: [150, 275] };
@@ -32,11 +32,11 @@ const pickOne = (g, a) => a[Math.floor(rnd(g) * a.length)];
 
 const FIRST = ['Alex', 'Ben', 'Cal', 'Dev', 'Eli', 'Finn', 'Gus', 'Hal', 'Ike', 'Jay', 'Kai', 'Leo', 'Max', 'Ned', 'Oz', 'Pat', 'Ray', 'Sam', 'Ty', 'Vic', 'Wes', 'Zed'];
 const LAST = ['Reyes', 'Brooks', 'Okafor', 'Lindqvist', 'Moreno', 'Tanaka', 'Walsh', 'Dubois', 'Petrov', 'Hayes', 'Castillo', 'Nguyen', 'Foster', 'Ibarra', 'Kowalski', 'Mensah', 'Rowe', 'Shaw', 'Vance', 'Zimmer', 'Bell', 'Cruz', 'Doyle', 'Eaton'];
-function makeBatter(g, i) {
-  const r = () => 0.38 + rnd(g) * 0.5;
-  return { id: i, name: `${pickOne(g, FIRST)[0]}. ${pickOne(g, LAST)}`, contact: r() + 0.05, power: r(), eye: r(), speed: r() };
+function makeBatter(g, i, s = 1) {
+  const r = () => clamp(0.38 + rnd(g) * 0.5 + (s - 1) * 0.9, 0.2, 0.98);
+  return { id: i, name: `${pickOne(g, FIRST)[0]}. ${pickOne(g, LAST)}`, contact: clamp(r() + 0.05, 0.2, 0.99), power: r(), eye: r(), speed: r() };
 }
-function makePitcher(g) { return { name: `${pickOne(g, FIRST)[0]}. ${pickOne(g, LAST)}`, velo: 0.45 + rnd(g) * 0.4, ctrl: 0.45 + rnd(g) * 0.4, brk: 0.45 + rnd(g) * 0.4, pitches: 0 }; }
+function makePitcher(g, s = 1) { const r = () => clamp(0.45 + rnd(g) * 0.4 + (s - 1) * 0.9, 0.25, 0.98); return { name: `${pickOne(g, FIRST)[0]}. ${pickOne(g, LAST)}`, velo: r(), ctrl: r(), brk: r(), pitches: 0 }; }
 
 export function newDiamond(o = {}) {
   const lv = o.level ?? 1;
@@ -47,7 +47,8 @@ export function newDiamond(o = {}) {
     last: '', ev: [], in: { cx: 0, cy: 0 }, steal: false, pending: null, bip: null, auto: !!o.auto, over: false, winner: null, drill: o.drill || null,
     stat: { U: { h: 0, k: 0, bb: 0, hr: 0, ab: 0, pit: 0, kp: 0, dp: 0, sb: 0, cs: 0 }, C: { h: 0, k: 0, bb: 0, hr: 0, ab: 0, pit: 0, kp: 0, dp: 0, sb: 0, cs: 0 } }, runsThis: 0, pitchCount: 0,
   };
-  for (const t of ['U', 'C']) { for (let i = 0; i < 9; i++) g.lineup[t].push(makeBatter(g, i)); g.pitcher[t] = makePitcher(g); }
+  const str = { U: o.strU ?? 1, C: o.strC ?? o.opp?.str ?? 1 };
+  for (const t of ['U', 'C']) { for (let i = 0; i < 9; i++) g.lineup[t].push(makeBatter(g, i, str[t])); g.pitcher[t] = makePitcher(g, str[t]); }
   if (o.start) Object.assign(g, o.start);
   startAtBat(g);
   return g;

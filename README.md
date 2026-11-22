@@ -103,3 +103,9 @@ A fourth option on the start screen, **Baseball: You Play**. You bat, pitch, mak
 - 3, 5 or 9 innings, three difficulty levels, extra innings, walk-offs, saved win-loss record.
 
 The simulation is `src/diamond.js` (DOM-free, tested in `test/diamond.test.js`); the canvas UI is `src/diamondui.js`.
+
+### Diamond season
+
+Season mode: eight teams, one or two meetings with everyone (7 or 14 games), standings with run difference, then a four-team
+single-game playoff (semifinal and final). Play your games, simulate one, or simulate to the end. The other games are simulated with
+the same engine and team strengths. Season stats and titles are saved. Logic lives in `src/diamondseason.js`.
