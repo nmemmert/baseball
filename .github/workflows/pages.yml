@@ -18,5 +18,7 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with: { path: _site }
+      # The artifact can take a few seconds to register; deploying immediately sometimes fails with "No artifacts named github-pages".
+      - run: sleep 20
       - id: d
         uses: actions/deploy-pages@v4
