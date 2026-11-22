@@ -1,6 +1,6 @@
 // Skipper Gridiron UI: canvas field + virtual stick + action buttons. The simulation lives in arcade.js.
 import {
-  newArcade, step, call, targets, bestOff, fgInfo, downText, spotText, OFF_PLAYS, DEF_CALLS, LEVELS, OPPONENTS, W, LEN, EZ, GOAL,
+  newArcade, resumeArcade, snapshot, step, call, targets, bestOff, fgInfo, downText, spotText, OFF_PLAYS, DEF_CALLS, LEVELS, OPPONENTS, W, LEN, EZ, GOAL,
 } from './arcade.js';
 import { fx } from './feedback.js';
 
@@ -11,6 +11,12 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const clockText = (c) => { c = Math.max(0, Math.ceil(c)); return `${Math.floor(c / 60)}:${String(c % 60).padStart(2, '0')}`; };
 const QLEN = [['Short', 180], ['Normal', 240], ['Long', 360]];
+const DRILLS = [
+  { t: 'Drill 1 of 4: Run the ball', tip: 'Take the handoff, drag upfield, hold SPRINT and tap JUKE at the first tackler. Gain 8 yards.', off: 'U', play: 'run_in', ok: (r) => r.gain >= 8 || r.td },
+  { t: 'Drill 2 of 4: Throw it', tip: 'Wait for a GREEN ring, then tap that number to throw. Complete a pass for 5+ yards.', off: 'U', play: 'pass_quick', ok: (r) => (r.comp && r.gain >= 5) || r.td },
+  { t: 'Drill 3 of 4: Make the tackle', tip: 'Chase the runner. Tap TACKLE when you are close. Hold them to 3 yards or less.', off: 'C', play: 'run_in', ok: (r) => r.gain <= 3 && !r.td },
+  { t: 'Drill 4 of 4: Field goal', tip: 'Tap KICK when the marker is in the middle green zone.', off: 'U', play: 'fg', f: 70, ok: (r) => r.fg },
+];
 const ROLE_TAG = { WR1: 'WR', WR2: 'WR', TE: 'TE', RB: 'RB' };
 
 export const ARCADE_HOW = [
@@ -19,19 +25,23 @@ export const ARCADE_HOW = [
   ['On offence', 'Pick a play. On a pass you control the quarterback: tap a numbered button (or tap the player) to throw. The ring colour shows how open he is: green open, yellow tight, red covered. After a catch or handoff you control the ball carrier: SPRINT (hold), JUKE to dodge, STIFF ARM to shed a tackler.'],
   ['On defence', 'Pick a coverage, then you control the defender nearest the ball. Drag to chase, TACKLE to dive at the carrier (miss and you fall), SWITCH to change player, JUMP to swat or pick off a pass at the right moment.'],
   ['Kicking', 'On 4th down you can punt or kick a field goal. For a kick, tap when the moving marker is in the centre.'],
+  ['Rules', 'Flags happen: offside, false start, holding, pass interference. After a touchdown kick for 1 or go for 2 from the 2-yard line. Use a Timeout to get the last clock runoff back, or Hurry-up to run less clock.'],
   ['Winning', 'Four quarters. First downs keep the drive alive, touchdowns are 7, field goals 3. Tied after four? Sudden-death overtime.'],
+  ['Modes', 'Quick game: one game vs a random team. Season: seven games, win six for the title. Practice: four short drills. After a touchdown, tap Replay to watch it again. Games you leave are saved, so you can Continue.'],
+  ['Controls', 'Change stick size, button size and left or right hand in the menu.'],
 ];
 
 export function openArcade({ onClose } = {}) {
   const S = {
     rec: load(), view: 'menu', g: null, demo: false, paused: false, camX: 18, camY: 40, shake: 0, banner: null, bannerT: 0, pops: [], parts: [],
     sig: '', bsig: '', ssig: '', raf: 0, last: 0, acc: 0, keys: {}, stick: { id: -1, ox: 0, oy: 0 }, tip: 0, held: {}, endSaved: false,
+    mode: 'quick', oppIdx: 0, rbuf: [], rclip: null, rp: null, rtick: 0, lastPhase: '', drillDone: false, sawTD: false, f0: 0,
   };
-  S.rec.set = Object.assign({ lv: 1, ql: 240 }, S.rec.set || {}); S.rec.tips = S.rec.tips || {};
+  S.rec.set = Object.assign({ lv: 1, ql: 240, st: 'm', bs: 'm', lh: 0 }, S.rec.set || {}); S.rec.tips = S.rec.tips || {};
   const root = document.createElement('div'); root.id = 'arcade';
   root.innerHTML = `<canvas class="ar-cv"></canvas>
     <div class="ar-top"><div class="ar-sb"><span class="ar-tm" data-k="u"></span><b class="ar-sc" data-k="us">0</b><span class="ar-mid"><i data-k="q"></i><em data-k="sit"></em></span><b class="ar-sc" data-k="cs">0</b><span class="ar-tm" data-k="c"></span></div><button class="ar-x" data-a="pause" aria-label="Pause">❚❚</button></div>
-    <div class="ar-bn"></div><div class="ar-tipbar"></div>
+    <div class="ar-bn"></div><div class="ar-tipbar"></div><div class="ar-who"></div><button class="ar-rp" data-a="replay">📺 Replay</button><div class="ar-rpb" data-a="replay">REPLAY · tap to skip</div>
     <div class="ar-sz"><i class="ar-base"></i><i class="ar-knob"></i></div>
     <div class="ar-btns"></div><div class="ar-sheet"></div><div class="ar-modal"></div>`;
   document.body.appendChild(root);
@@ -49,11 +59,36 @@ export function openArcade({ onClose } = {}) {
 
   /* ---------------------------------- game control ---------------------------------- */
   const myCol = '#2b6cb0';
-  function start(demo) {
-    const opp = OPPONENTS[Math.floor(Math.random() * OPPONENTS.length)];
-    S.g = newArcade({ level: S.rec.set.lv, qlen: S.rec.set.ql, opp, col: myCol, name: 'Skipper', auto: demo, seed: (Math.random() * 2 ** 31) | 0 });
-    S.demo = demo; S.view = 'game'; S.paused = false; S.endSaved = false; S.pops = []; S.parts = []; S.banner = null; S.sig = S.bsig = S.ssig = '';
-    S.camX = 18; S.camY = S.g.los + 4; modal(''); drawSheet(true);
+  const season = () => (S.rec.season ||= { i: 0, w: 0, l: 0, t: 0, res: [] });
+  function applySet() { const st = S.rec.set; root.classList.toggle('lefty', !!st.lh); root.classList.remove('bs-s', 'bs-l'); if (st.bs !== 'm') root.classList.add(`bs-${st.bs}`); }
+  applySet();
+  function begin(g, demo) {
+    S.g = g; S.demo = demo; S.view = 'game'; S.paused = false; S.endSaved = false; S.pops = []; S.parts = []; S.banner = null; S.sig = S.bsig = S.ssig = '';
+    S.rbuf = []; S.rclip = null; S.rp = null; S.drillDone = false; S.sawTD = false; S.lastPhase = '';
+    S.camX = 18; S.camY = g.los + 4; modal(''); drawSheet(true);
+  }
+  function start(demo, o = {}) {
+    const opp = o.opp || OPPONENTS[Math.floor(Math.random() * OPPONENTS.length)];
+    S.mode = o.mode || 'quick'; S.oppIdx = OPPONENTS.indexOf(opp);
+    begin(newArcade({ level: S.rec.set.lv, qlen: S.rec.set.ql, opp, col: myCol, name: 'Skipper', auto: demo, seed: (Math.random() * 2 ** 31) | 0 }), demo);
+  }
+  function startDrill(i) {
+    const d = DRILLS[i], f = d.f ?? 40;
+    S.mode = 'drill'; S.di = i;
+    const g = newArcade({ level: 0, qlen: 240, opp: OPPONENTS[0], col: myCol, name: 'Skipper', seed: (Math.random() * 2 ** 31) | 0, drill: i, start: { off: d.off, f, firstAt: f + 10, down: 1, toGo: 10 } });
+    S.f0 = f; begin(g, false);
+    if (d.off === 'C') { g.plan = 'run_in'; call(g, 'base'); } else call(g, d.play);
+    const t = $('.ar-tipbar'); t.textContent = d.tip; t.classList.add('on'); S.tip = 9;
+  }
+  function resumeSaved() {
+    const sv = S.rec.save; if (!sv) return; S.mode = sv.mode || 'quick'; S.oppIdx = sv.oi || 0;
+    begin(resumeArcade(sv.s), false);
+  }
+  function judgeDrill(g) {
+    if (S.drillDone) return; S.drillDone = true;
+    const d = DRILLS[S.di], r = { gain: g.f - S.f0, td: S.sawTD, comp: g.stat.U.comp > 0, fg: !!(g.kickInfo && g.kickInfo.title === 'FIELD GOAL IS GOOD') };
+    const ok = d.ok(r);
+    setTimeout(() => { if (S.view === 'game' && S.mode === 'drill') modal(`<div class="ar-card"><div class="ar-logo sm">${ok ? '✅ Nice!' : '❌ Not quite'}</div><p class="ar-sub">${esc(d.t)}</p><p class="ar-sub">${ok ? (S.di < DRILLS.length - 1 ? 'Ready for the next one?' : 'Practice complete. You are ready for a real game.') : esc(d.tip)}</p>${ok && S.di < DRILLS.length - 1 ? '<button class="ar-go" data-a="drillnext">Next drill →</button>' : ''}<button class="${ok ? '' : 'ar-go'}" data-a="drillretry">↻ Try again</button><button data-a="menu">Menu</button></div>`); }, 1300);
   }
   function quit() { cancelAnimationFrame(S.raf); window.removeEventListener('resize', resize); window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); document.removeEventListener('visibilitychange', vis); root.remove(); if (onClose) onClose(); }
   const vis = () => { if (document.hidden && S.view === 'game' && !S.demo) setPause(true); };
@@ -62,15 +97,21 @@ export function openArcade({ onClose } = {}) {
 
   /* ------------------------------------- modals ------------------------------------- */
   const rec = () => { const r = S.rec; return `${r.w || 0}-${r.l || 0}${r.t ? `-${r.t}` : ''}`; };
+  const seg = (k, cur, opts) => `<div class="ar-seg">${opts.map(([n, v]) => `<button data-a="${k}" data-v="${v}" class="${String(cur) === String(v) ? 'on' : ''}">${n}</button>`).join('')}</div>`;
   function menuHtml() {
-    const s = S.rec.set;
-    return `<div class="ar-card"><div class="ar-logo">GRIDIRON</div><p class="ar-sub">Football you actually play. 7-on-7, thumbs on glass.</p>
-      <div class="ar-opt"><span>Difficulty</span><div class="ar-seg">${LEVELS.map((l) => `<button data-a="lv" data-v="${l.id}" class="${s.lv === l.id ? 'on' : ''}">${l.name}</button>`).join('')}</div></div>
-      <div class="ar-opt"><span>Game length</span><div class="ar-seg">${QLEN.map(([n, v]) => `<button data-a="ql" data-v="${v}" class="${s.ql === v ? 'on' : ''}">${n}</button>`).join('')}</div></div>
-      <button class="ar-go" data-a="play">▶ Play a game</button>
-      <div class="ar-row"><button data-a="demo">👀 Watch a demo</button><button data-a="how">📖 How to play</button></div>
-      <p class="ar-rec">Your record: <b>${rec()}</b>${S.rec.best ? ` · best win +${S.rec.best}` : ''}</p>
-      <button class="ar-link" data-a="exit">← Back to Skipper</button></div>`;
+    const s = S.rec.set, sv = S.rec.save, se = S.rec.season;
+    return `<div class="ar-card ar-menu"><div class="ar-logo">GRIDIRON</div><p class="ar-sub">Football you actually play. 7-on-7, thumbs on glass.</p>
+      ${sv ? `<button class="ar-go" data-a="resume">▶ Continue game<small>vs ${esc(sv.s.names.C)} · Q${sv.s.q} ${clockText(sv.s.clock)} · ${sv.s.score.U}–${sv.s.score.C}</small></button>` : ''}
+      <button class="${sv ? '' : 'ar-go'}" data-a="play">⚡ Quick game</button>
+      <button data-a="season">🏆 ${se && se.i > 0 ? `Season: game ${se.i + 1} of ${OPPONENTS.length} (${se.w}-${se.l}${se.t ? `-${se.t}` : ''})` : 'Season: 7 games'}</button>
+      <div class="ar-row"><button data-a="practice">🎓 Practice</button><button data-a="demo">👀 Demo</button></div>
+      <div class="ar-opt"><span>Difficulty</span>${seg('lv', s.lv, LEVELS.map((l) => [l.name, l.id]))}</div>
+      <div class="ar-opt"><span>Game length</span>${seg('ql', s.ql, QLEN.map(([n, v]) => [n, v]))}</div>
+      <div class="ar-opt"><span>Stick size</span>${seg('st', s.st, [['Small', 's'], ['Medium', 'm'], ['Large', 'l']])}</div>
+      <div class="ar-opt"><span>Button size</span>${seg('bs', s.bs, [['Small', 's'], ['Medium', 'm'], ['Large', 'l']])}</div>
+      <div class="ar-opt"><span>Hand</span>${seg('lh', s.lh, [['Right-handed', 0], ['Left-handed', 1]])}</div>
+      <div class="ar-row"><button data-a="how">📖 How to play</button><button data-a="exit">← Back to Skipper</button></div>
+      <p class="ar-rec">Quick games: <b>${rec()}</b>${S.rec.best ? ` · best win +${S.rec.best}` : ''}</p></div>`;
   }
   function howHtml() { return `<div class="ar-card ar-how"><h2>How to play</h2>${ARCADE_HOW.map(([h, t]) => `<h3>${h}</h3><p>${t}</p>`).join('')}<button class="ar-go" data-a="menu">Got it</button></div>`; }
   function pauseHtml() { return `<div class="ar-card"><h2>Paused</h2><button class="ar-go" data-a="resume">▶ Resume</button><button data-a="quit2">Quit to menu</button></div>`; }
@@ -83,26 +124,34 @@ export function openArcade({ onClose } = {}) {
       <tr><td>Completions</td><td>${u.comp}/${u.att}</td><td>${c.comp}/${c.att}</td></tr><tr><td>Touchdowns</td><td>${u.td}</td><td>${c.td}</td></tr>
       <tr><td>Sacks</td><td>${u.sacks}</td><td>${c.sacks}</td></tr><tr><td>Interceptions</td><td>${u.ints}</td><td>${c.ints}</td></tr>
       <tr><td>Broken tackles</td><td>${u.brk}</td><td>${c.brk}</td></tr><tr><td>Your tackles</td><td>${u.tkl}</td><td>–</td></tr></table>
-      <button class="ar-go" data-a="play">↻ Play again</button><button data-a="menu">Menu</button></div>`;
+      ${seasonNote()}<button class="ar-go" data-a="${S.mode === 'season' ? (S.rec.season ? 'season' : 'menu') : 'play'}">${S.mode === 'season' ? (S.rec.season ? 'Next game →' : 'Menu') : '↻ Play again'}</button><button data-a="menu">Menu</button></div>`;
+  }
+  function seasonNote() {
+    if (S.mode !== 'season' || !S.seasonDone) return S.mode === 'season' && S.rec.season ? `<p class="ar-sub">Season record: <b>${S.rec.season.w}-${S.rec.season.l}${S.rec.season.t ? `-${S.rec.season.t}` : ''}</b> after ${S.rec.season.i} of ${OPPONENTS.length}</p>` : '';
+    const d = S.seasonDone; return `<p class="ar-sub">${d.w >= 6 ? '🏆 <b>Season champions!</b>' : d.w >= 4 ? 'Solid season.' : 'Rough season. Run it back!'} Final record <b>${d.w}-${d.l}${d.t ? `-${d.t}` : ''}</b></p>`;
   }
   function modal(html) { const m = $('.ar-modal'); m.innerHTML = html; m.classList.toggle('on', !!html); }
   modal(menuHtml());
 
   /* ----------------------------------- call sheet ----------------------------------- */
-  function sheetKey(g) { return `${g.phase}|${g.off}|${g.down}|${g.f}|${g.q}|${g.kickInfo ? g.kickInfo.title : ''}|${g.meter ? 1 : 0}`; }
+  function sheetKey(g) { return `${g.phase}|${g.off}|${g.down}|${g.f}|${g.q}|${g.kickInfo ? g.kickInfo.title : ''}|${g.meter ? 1 : 0}|${g.hurry ? 1 : 0}|${g.to.U}|${g.lastRunoff > 0 ? 1 : 0}|${g.twoPt ? 1 : 0}`; }
   function drawSheet(force) {
     const g = S.g, sh = $('.ar-sheet');
     if (!g || S.view !== 'game') { sh.innerHTML = ''; sh.className = 'ar-sheet'; return; }
     const key = sheetKey(g);
     if (!force && key === S.ssig) { if (g.phase === 'meter') updateMeter(); return; }
     S.ssig = key;
-    if (g.phase === 'call' && !S.demo) {
+    if (g.phase === 'call' && !S.demo && S.mode !== 'drill' && !g.twoPt) { const sn = snapshot(g); if (sn) { S.rec.save = { s: sn, mode: S.mode, oi: S.oppIdx }; store(S.rec); } }
+    if (g.phase === 'pat' && !S.demo) {
+      sh.className = 'ar-sheet on kick good'; sh.innerHTML = `<div class="ar-kc"><i>🏈</i><b>TOUCHDOWN! ${g.score.U}–${g.score.C}</b><small>Choose your extra point</small><div class="ar-cards sp pat"><button class="ar-pc" data-call="kick1"><i>🥅</i><b>Kick it</b><small>+1 point, very safe</small></button><button class="ar-pc" data-call="go2"><i>💪</i><b>Go for 2</b><small>One play from the 2</small></button></div></div>`;
+    } else if (g.phase === 'call' && !S.demo) {
       const o = g.off === 'U', best = o ? Object.entries(bestOff(g)).sort((a, b) => b[1] - a[1])[0][0] : null;
       const cards = o ? Object.entries(OFF_PLAYS).map(([id, p]) => card(id, p, id === best)) : Object.entries(DEF_CALLS).map(([id, p]) => card(id, p, false));
       let extra = '';
       if (o && g.down === 4) { const fi = fgInfo(g); extra = `<div class="ar-cards sp"><button class="ar-pc" data-call="punt"><i>🦵</i><b>Punt</b><small>Give it away safely</small></button><button class="ar-pc" data-call="fg"><i>🥅</i><b>Field Goal</b><small>${fi.dist} yds · about ${fi.pct}%</small></button></div>`; }
+      if (!g.twoPt && S.mode !== 'drill') extra += `<div class="ar-cards sp tm"><button class="ar-pc sm" data-call="timeout" ${g.to.U > 0 && g.lastRunoff > 0 ? '' : 'disabled'}><b>⏱ Timeout (${g.to.U})</b><small>Get back the last ${g.lastRunoff || 0}s</small></button>${o ? `<button class="ar-pc sm ${g.hurry ? 'on' : ''}" data-call="hurry"><b>⚡ Hurry-up: ${g.hurry ? 'ON' : 'off'}</b><small>Runs less clock</small></button>` : '<span></span>'}</div>`;
       sh.className = 'ar-sheet on call';
-      sh.innerHTML = `<div class="ar-sitrow"><b>${o ? 'YOUR BALL' : 'THEIR BALL'}</b> · ${downText(g)} · ${spotText(g.f)}</div>${g.hint ? `<div class="ar-hl">💡 ${esc(g.hint)}</div>` : ''}${extra}<div class="ar-cards">${cards.join('')}</div>`;
+      sh.innerHTML = `<div class="ar-sitrow"><b>${g.twoPt ? 'TWO-POINT TRY' : o ? 'YOUR BALL' : 'THEIR BALL'}</b> · ${downText(g)} · ${spotText(g.f)}</div>${g.hint ? `<div class="ar-hl">💡 ${esc(g.hint)}</div>` : ''}${extra}<div class="ar-cards">${cards.join('')}</div>`;
     } else if (g.phase === 'kick' && g.kickInfo) {
       const k = g.kickInfo;
       sh.className = `ar-sheet on kick ${k.c || ''}`; sh.innerHTML = `<div class="ar-kc"><i>${k.icon}</i><b>${esc(k.title)}</b>${k.sub ? `<em>${esc(k.sub)}</em>` : ''}<small>${esc(k.text)}</small></div>`;
@@ -115,7 +164,7 @@ export function openArcade({ onClose } = {}) {
 
   /* ------------------------------------ buttons ------------------------------------ */
   function buttonsFor(g) {
-    if (S.demo || g.phase === 'call' || g.phase === 'kick' || g.phase === 'meter' || g.phase === 'over') return [];
+    if (S.demo || g.phase === 'call' || g.phase === 'kick' || g.phase === 'meter' || g.phase === 'over' || g.phase === 'pat') return [];
     const ctl = g.pl[g.ctl ?? -1] || null, car = g.carrier;
     const B = [];
     const sprint = { id: 'sprint', t: '⚡', n: 'SPRINT', hold: true };
@@ -152,10 +201,11 @@ export function openArcade({ onClose } = {}) {
   btns.addEventListener('contextmenu', (e) => e.preventDefault());
 
   /* ------------------------------------- stick ------------------------------------- */
-  const sz = $('.ar-sz'), base = $('.ar-base'), knob = $('.ar-knob'), R = 52;
+  const sz = $('.ar-sz'), base = $('.ar-base'), knob = $('.ar-knob'); let R = 52;
   function setStick(x, y) { const g = S.g; if (g) { g.in.mx = x; g.in.my = y; } }
   sz.addEventListener('pointerdown', (e) => {
-    if (S.stick.id >= 0 || !S.g || S.g.phase === 'call') return; e.preventDefault(); sz.setPointerCapture?.(e.pointerId);
+    if (S.stick.id >= 0 || !S.g || S.g.phase === 'call' || S.g.phase === 'pat') return; e.preventDefault();
+    R = { s: 42, m: 52, l: 66 }[S.rec.set.st] || 52; base.style.width = base.style.height = `${R * 2}px`; sz.setPointerCapture?.(e.pointerId);
     const r = sz.getBoundingClientRect(); S.stick = { id: e.pointerId, ox: e.clientX, oy: e.clientY };
     base.style.cssText = `left:${e.clientX - r.left - R}px;top:${e.clientY - r.top - R}px;opacity:1`; knob.style.cssText = `left:${e.clientX - r.left - 22}px;top:${e.clientY - r.top - 22}px;opacity:1`;
   });
@@ -190,13 +240,18 @@ export function openArcade({ onClose } = {}) {
 
   /* --------------------------------- clicks (DOM) --------------------------------- */
   root.addEventListener('click', (e) => {
-    const c = e.target.closest('[data-call]'); if (c && S.g) { if (call(S.g, c.dataset.call)) { fx.tick(); tipFor(S.g); } return; }
+    const c = e.target.closest('[data-call]'); if (c && S.g) { if (c.disabled) return; const id = c.dataset.call; if (call(S.g, id)) { fx.tick(); if (OFF_PLAYS[id] || DEF_CALLS[id]) { if (S.mode !== 'drill') tipFor(S.g); } drawSheet(true); } return; }
     const a = e.target.closest('[data-a]'); if (!a) return;
     const k = a.dataset.a;
-    if (k === 'lv') { S.rec.set.lv = +a.dataset.v; store(S.rec); modal(menuHtml()); }
+    if (k === 'st' || k === 'bs' || k === 'lh') { S.rec.set[k] = k === 'lh' ? +a.dataset.v : a.dataset.v; store(S.rec); applySet(); modal(menuHtml()); }
+    else if (k === 'resume') resumeSaved(); else if (k === 'practice') startDrill(0);
+    else if (k === 'drillnext') startDrill(S.di + 1); else if (k === 'drillretry') startDrill(S.di);
+    else if (k === 'season') { const se = season(); start(false, { opp: OPPONENTS[se.i % OPPONENTS.length], mode: 'season' }); }
+    else if (k === 'replay') { if (S.rp) { S.rp = null; } else if (S.rclip && S.rclip.length) S.rp = { i: 0, acc: 0 }; }
+    else if (k === 'lv') { S.rec.set.lv = +a.dataset.v; store(S.rec); modal(menuHtml()); }
     else if (k === 'ql') { S.rec.set.ql = +a.dataset.v; store(S.rec); modal(menuHtml()); }
-    else if (k === 'play') start(false); else if (k === 'demo') start(true);
-    else if (k === 'how') modal(howHtml()); else if (k === 'menu') { S.view = 'menu'; S.g = null; S.paused = false; modal(menuHtml()); drawSheet(true); drawButtons(null); }
+    else if (k === 'play') { S.rec.save = null; store(S.rec); start(false); } else if (k === 'demo') start(true);
+    else if (k === 'how') modal(howHtml()); else if (k === 'menu') { S.view = 'menu'; S.g = null; S.rp = null; S.paused = false; modal(menuHtml()); drawSheet(true); drawButtons(null); }
     else if (k === 'exit') quit(); else if (k === 'pause') { if (S.view === 'game') setPause(!S.paused); else if (S.view === 'menu') quit(); }
     else if (k === 'resume') setPause(false); else if (k === 'quit2') { S.view = 'menu'; S.g = null; S.paused = false; modal(menuHtml()); drawSheet(true); drawButtons(null); }
     else if (k === 'kick' && S.g) S.g.in.kick = true;
@@ -215,14 +270,14 @@ export function openArcade({ onClose } = {}) {
   }
 
   /* ------------------------------------ events ------------------------------------ */
-  const SFX = { hit: fx.hit, td: fx.homer, brk: fx.out, int: fx.strike, catch: fx.tick, whoosh: fx.tick, kick: fx.hit, snap: fx.tick, throw: fx.tick, out: fx.out };
+  const SFX = { hit: fx.thud, td: fx.cheer, brk: fx.out, int: fx.groan, whistle: fx.whistle, catch: fx.crowd, whoosh: fx.tick, kick: fx.hit, snap: fx.tick, throw: fx.tick, out: fx.out };
   function drain(g) {
     for (const e of g.ev.splice(0)) {
-      if (e.k === 'banner') { S.banner = e; S.bannerT = 1.9; }
+      if (e.k === 'banner') { S.banner = e; S.bannerT = 1.9; if (e.t === 'TOUCHDOWN!') S.sawTD = true; }
       else if (e.k === 'sfx') { const f = SFX[e.n]; if (f && S.view === 'game') f(); }
       else if (e.k === 'pop') S.pops.push({ t: e.t, x: e.x, y: e.y, a: 0 });
       else if (e.k === 'hit') { S.shake = Math.max(S.shake, e.big ? 7 : 3); for (let i = 0; i < 7; i++) S.parts.push({ x: e.x, y: e.y, vx: (Math.random() - 0.5) * 7, vy: (Math.random() - 0.5) * 7, a: 0, l: 0.55, c: '#d8c79a', r: 0.22 }); }
-      else if (e.k === 'burst') { S.shake = 9; for (let i = 0; i < 46; i++) S.parts.push({ x: e.x, y: e.y, vx: (Math.random() - 0.5) * 16, vy: Math.random() * 14, a: 0, l: 1.8, c: ['#ffd166', '#ff3b5c', '#3ddc84', '#4aa8ff', '#fff'][i % 5], r: 0.3 }); }
+      else if (e.k === 'burst') { if (e.c === 'td') { S.rclip = S.rbuf.slice(-170); S.sawTD = true; } S.shake = 9; for (let i = 0; i < 46; i++) S.parts.push({ x: e.x, y: e.y, vx: (Math.random() - 0.5) * 16, vy: Math.random() * 14, a: 0, l: 1.8, c: ['#ffd166', '#ff3b5c', '#3ddc84', '#4aa8ff', '#fff'][i % 5], r: 0.3 }); }
       else if (e.k === 'catch') { for (let i = 0; i < 5; i++) S.parts.push({ x: e.x, y: e.y, vx: (Math.random() - 0.5) * 5, vy: (Math.random() - 0.5) * 5, a: 0, l: 0.4, c: '#fff', r: 0.16 }); }
       else if (e.k === 'over') { setTimeout(() => finishGame(g), 1900); }
     }
@@ -230,8 +285,13 @@ export function openArcade({ onClose } = {}) {
   function finishGame(g) {
     if (S.view !== 'game' || S.g !== g) return;
     if (!S.demo && !S.endSaved) {
-      S.endSaved = true; const r = S.rec;
-      if (g.winner === 'U') { r.w = (r.w || 0) + 1; r.best = Math.max(r.best || 0, g.score.U - g.score.C); } else if (g.winner === 'C') r.l = (r.l || 0) + 1; else r.t = (r.t || 0) + 1;
+      S.endSaved = true; const r = S.rec; r.save = null; S.seasonDone = null;
+      if (S.mode === 'season') {
+        const se = season(); if (g.winner === 'U') se.w++; else if (g.winner === 'C') se.l++; else se.t++; se.i++; se.res.push([g.names.C, g.score.U, g.score.C]);
+        if (se.i >= OPPONENTS.length) { S.seasonDone = { w: se.w, l: se.l, t: se.t }; r.season = null; if (se.w >= 6) r.titles = (r.titles || 0) + 1; }
+      } else {
+        if (g.winner === 'U') { r.w = (r.w || 0) + 1; r.best = Math.max(r.best || 0, g.score.U - g.score.C); } else if (g.winner === 'C') r.l = (r.l || 0) + 1; else r.t = (r.t || 0) + 1;
+      }
       store(r); setTimeout(g.winner === 'U' ? fx.win : fx.lose, 200);
     }
     if (S.demo) { S.view = 'menu'; modal(menuHtml()); return; }
@@ -250,7 +310,7 @@ export function openArcade({ onClose } = {}) {
       else if (g.pl.length) { const c = g.pl.reduce((a, p) => a + p.y, 0) / g.pl.length; ty = Math.max(g.los + 2, c); tx = S.camX; }
     }
     if (g.phase === 'call' || g.phase === 'set') ty = land ? g.los + (g.phase === 'call' && !S.demo ? 0.2 : 0.05) * ch / scale() : g.los - (g.phase === 'call' && !S.demo ? 0.3 : 0.12) * ch / scale() + 1;
-    return { x: clamp(tx, 15, W - 15), y: clamp(ty, g.phase === 'call' ? 0 : 22, LEN - 24) };
+    return { x: clamp(tx, 15, W - 15), y: clamp(ty, g.phase === 'call' ? 0 : 22, g.phase === 'call' || g.phase === 'set' ? LEN - 4 : LEN - 24) };
   }
   function shade(hex, f) { const n = parseInt(hex.slice(1), 16); let r = (n >> 16) & 255, gg = (n >> 8) & 255, b = n & 255; r = clamp(Math.round(r * f), 0, 255); gg = clamp(Math.round(gg * f), 0, 255); b = clamp(Math.round(b * f), 0, 255); return `rgb(${r},${gg},${b})`; }
 
@@ -285,7 +345,7 @@ export function openArcade({ onClose } = {}) {
   }
 
   function drawPlayer(g, p, sc, ctl) {
-    const x = sx(p.x, sc), y = sy(p.y, sc), r = sc * 0.95;
+    const x = sx(p.x, sc), y = sy(p.y, sc), r = sc * 1.08;
     if (x < -40 || x > cw + 40) return;
     const col = g.col[p.team], fa = Math.atan2(-p.vy, p.vx || 0.0001), moving = Math.hypot(p.vx, p.vy) > 0.5;
     const ang = moving ? -Math.atan2(p.vy, p.vx) : (p.side === 'O' ? -Math.PI / 2 : Math.PI / 2); void fa;
@@ -298,7 +358,8 @@ export function openArcade({ onClose } = {}) {
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.4; ctx.stroke(); ctx.restore();
     // helmet
     const g2 = ctx.createRadialGradient(x - r * 0.2, y - r * 0.25, r * 0.1, x, y, r * 0.62); g2.addColorStop(0, shade(col, 1.45)); g2.addColorStop(1, shade(col, 0.9));
-    ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(x, y, r * 0.55, 0, 6.3); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.3; ctx.stroke();
+    ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(x, y, r * 0.62, 0, 6.3); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.3; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 2.2; ctx.font = `900 ${Math.max(8, r * 0.6)}px system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label(String(p.num), x, y + 0.5, true);
     if (p.stun > 0.1 && p.team !== (g.carrier && g.carrier.team)) { ctx.fillStyle = '#fff'; ctx.font = `${r}px system-ui`; ctx.textAlign = 'center'; label('✦', x, y - r * 1.2); }
     if (p === ctl) { // controlled marker
       ctx.strokeStyle = '#ffd33d'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, r * 1.35, 0, 6.3); ctx.stroke();
@@ -331,8 +392,9 @@ export function openArcade({ onClose } = {}) {
   }
 
   function draw(dt) {
-    const g = S.g;
+    let g = S.g;
     if (!g) { ctx.fillStyle = '#0b3b22'; ctx.fillRect(0, 0, cw, ch); return; }
+    if (S.rp && S.rclip && S.rclip.length) { const f = S.rclip[Math.min(S.rp.i, S.rclip.length - 1)]; g = Object.assign(Object.create(S.g), { pl: f.pl, carrier: f.pl[f.car] || null, fl: f.fl, los: f.los, firstAt: f.firstAt, phase: 'live', ctl: -1, mode: f.fl ? 'air' : 'run' }); }
     const sc = scale(), t = camTarget(g), k = 1 - Math.pow(0.0008, dt);
     S.camX += (t.x - S.camX) * k; S.camY += (t.y - S.camY) * (g.phase === 'live' ? k : k * 0.8);
     S.shake = Math.max(0, S.shake - dt * 22);
@@ -357,6 +419,11 @@ export function openArcade({ onClose } = {}) {
     if (S.banner && S.bannerT > 0) { S.bannerT -= dt; bn.className = `ar-bn on ${S.banner.c}`; if (bn.dataset.k !== S.banner.t + S.banner.s) { bn.dataset.k = S.banner.t + S.banner.s; bn.innerHTML = `<b>${esc(S.banner.t)}</b>${S.banner.s ? `<small>${esc(S.banner.s)}</small>` : ''}`; } }
     else { bn.className = 'ar-bn'; bn.dataset.k = ''; }
     if (S.tip > 0) { S.tip -= dt; if (S.tip <= 0) $('.ar-tipbar').classList.remove('on'); }
+    $('.ar-rp').classList.toggle('on', !!(S.rclip && S.rclip.length > 10 && !S.rp && !S.demo && ['dead', 'kick', 'pat'].includes(g.phase)));
+    $('.ar-rpb').classList.toggle('on', !!S.rp); root.classList.toggle('rpl', !!S.rp);
+    const who = $('.ar-who'), c = g.pl[g.ctl ?? -1], on = g.phase === 'live' && c && !S.demo && !S.rp;
+    if (on) { const tx = `#${c.num} ${c.name} · ${c.role.replace(/\d/, '')}`; if (who.textContent !== tx) who.textContent = tx; }
+    who.classList.toggle('on', !!on);
   }
 
   /* ------------------------------------- loop ------------------------------------- */
@@ -365,9 +432,20 @@ export function openArcade({ onClose } = {}) {
     const dt = Math.min(0.05, (ts - (S.last || ts)) / 1000); S.last = ts;
     const g = S.g;
     if (g && S.view === 'game' && !S.paused) {
-      S.acc += dt; let n = 0; const sp = S.demo ? 1.6 : 1;
-      while (S.acc >= 1 / 60 && n++ < 6) { step(g, (1 / 60) * sp); S.acc -= 1 / 60; }
-      drain(g); drawSheet(false); drawButtons(g); updateHud(g, dt);
+      if (S.rp) {
+        S.rp.acc += dt; S.rp.i = Math.floor(S.rp.acc * 20); if (!S.rclip || S.rp.i >= S.rclip.length) S.rp = null;
+      } else {
+        S.acc += dt; let n = 0; const sp = S.demo ? 1.6 : 1;
+        while (S.acc >= 1 / 60 && n++ < 6) { step(g, (1 / 60) * sp); S.acc -= 1 / 60; }
+        if (g.phase === 'live') {
+          if (S.lastPhase !== 'live') { S.rbuf = []; S.rclip = null; S.sawTD = false; }
+          if (++S.rtick % 3 === 0) { S.rbuf.push({ pl: g.pl.map((p) => ({ ...p })), fl: g.fl ? { ...g.fl } : null, car: g.carrier ? g.carrier.id : -1, los: g.los, firstAt: g.firstAt }); if (S.rbuf.length > 260) S.rbuf.shift(); }
+        }
+        S.lastPhase = g.phase;
+        drain(g);
+        if (S.mode === 'drill' && !S.drillDone && (g.phase === 'dead' || g.phase === 'kick')) judgeDrill(g);
+      }
+      drawSheet(false); drawButtons(g); updateHud(g, dt);
     }
     draw(S.paused ? 0 : dt);
   }

@@ -43,8 +43,8 @@ const RT = {
 const NUM = { QB: 12, RB: 28, WR1: 81, WR2: 84, TE: 87, OL1: 66, OL2: 72, DL1: 94, DL2: 91, LB1: 54, LB2: 58, CB1: 24, CB2: 31, S: 21 };
 
 export const OPPONENTS = [
-  { name: 'Harbor Hawks', col: '#c0392b' }, { name: 'Capital Wolves', col: '#7b4bc2' }, { name: 'Prairie Bison', col: '#9a6a34' },
-  { name: 'Bay Sharks', col: '#139a98' }, { name: 'Forge', col: '#d9a21b' }, { name: 'Lakeshore Gulls', col: '#cfd6e2' }, { name: 'Mesa Scorpions', col: '#e0701f' },
+  { name: 'Prairie Bison', col: '#9a6a34', str: 0.96 }, { name: 'Lakeshore Gulls', col: '#cfd6e2', str: 0.97 }, { name: 'Bay Sharks', col: '#139a98', str: 0.99 },
+  { name: 'Harbor Hawks', col: '#c0392b', str: 1.0 }, { name: 'Mesa Scorpions', col: '#e0701f', str: 1.02 }, { name: 'Capital Wolves', col: '#7b4bc2', str: 1.04 }, { name: 'Forge', col: '#d9a21b', str: 1.06 },
 ];
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -58,19 +58,32 @@ const sfx = (g, n) => g.ev.push({ k: 'sfx', n });
 const ord = (n) => `${n}${['th', 'st', 'nd', 'rd'][n > 3 && n < 21 ? 0 : n % 10 < 4 ? n % 10 : 0]}`;
 export const spotText = (f) => (f === 50 ? 'midfield' : f < 50 ? `own ${f}` : `opp ${100 - f}`);
 
+const FIRST = 'ABCDEFGHJKLMNPRSTW', LAST = ['Reyes', 'Brooks', 'Okafor', 'Lindqvist', 'Moreno', 'Tanaka', 'Walsh', 'Dubois', 'Petrov', 'Hayes', 'Castillo', 'Nguyen', 'Foster', 'Ibarra', 'Kowalski', 'Mensah', 'Rowe', 'Shaw', 'Vance', 'Zimmer', 'Bell', 'Cruz', 'Doyle', 'Eaton'];
+const lvlFor = (lv, str = 1) => (str === 1 ? LEVELS[lv] : { ...LEVELS[lv], dSpd: LEVELS[lv].dSpd * str, tkl: LEVELS[lv].tkl + (str - 1) * 0.6, cover: LEVELS[lv].cover * str, qb: LEVELS[lv].qb * str, rush: LEVELS[lv].rush * str });
+function makeRoster(g) { const r = { U: {}, C: {} }; for (const t of ['U', 'C']) for (const role of Object.keys(RT)) r[t][role] = `${FIRST[Math.floor(rnd(g) * FIRST.length)]}. ${LAST[Math.floor(rnd(g) * LAST.length)]}`; return r; }
+
 export function newArcade(o = {}) {
-  const lv = o.level ?? 1, qlen = o.qlen || 240;
+  const lv = o.level ?? 1, qlen = o.qlen || 240, str = o.opp?.str ?? 1;
   const g = {
-    rs: ((o.seed ?? (Date.now() & 0x7fffffff)) >>> 0) || 1, lv, level: LEVELS[lv], qlen, q: 1, clock: qlen, ot: false,
+    rs: ((o.seed ?? (Date.now() & 0x7fffffff)) >>> 0) || 1, lv, str, level: lvlFor(lv, str), qlen, q: 1, clock: qlen, ot: false,
     score: { U: 0, C: 0 }, names: { U: o.name || 'You', C: o.opp?.name || 'Hawks' }, col: { U: o.col || '#2b6cb0', C: o.opp?.col || '#c0392b' },
     off: 'U', f: 25, down: 1, toGo: 10, firstAt: 35, phase: 'call', timer: 0, play: null, defCall: null, plan: null,
     pl: [], r: {}, carrier: null, mode: 'idle', t: 0, los: 35, turn: false, hand: false, tgt: null, fl: null, ev: [], in: blankIn(), auto: !!o.auto,
     over: false, qEnd: false, baitT: 0, swatT: -9, ctlId: -1, ctlT: 0, open: {}, drive: [],
     stat: { U: { rush: 0, pass: 0, comp: 0, att: 0, ints: 0, sacks: 0, td: 0, brk: 0, tkl: 0, fum: 0, pts: 0 }, C: { rush: 0, pass: 0, comp: 0, att: 0, ints: 0, sacks: 0, td: 0, brk: 0, tkl: 0, fum: 0, pts: 0 } },
-    last: '', log: [], plays: 0,
+    last: '', log: [], plays: 0, to: { U: 3, C: 3 }, hurry: false, lastRunoff: 0, twoPt: null, drill: o.drill || null,
   };
+  g.roster = makeRoster(g);
+  if (o.start) Object.assign(g, o.start);
   startCall(g);
   return g;
+}
+const SNAP = ['rs', 'lv', 'str', 'qlen', 'q', 'clock', 'ot', 'score', 'names', 'col', 'off', 'f', 'down', 'toGo', 'firstAt', 'stat', 'plays', 'to', 'hurry', 'roster'];
+export function snapshot(g) { if (!g || g.phase !== 'call' || g.twoPt || g.over || g.drill) return null; const o = {}; for (const k of SNAP) o[k] = JSON.parse(JSON.stringify(g[k] ?? null)); return o; }
+export function resumeArcade(sn, auto = false) {
+  const g = newArcade({ seed: sn.rs, level: sn.lv, qlen: sn.qlen, auto });
+  for (const k of SNAP) g[k] = JSON.parse(JSON.stringify(sn[k]));
+  g.level = lvlFor(g.lv, g.str ?? 1); g.lastRunoff = 0; startCall(g); return g;
 }
 
 /* ------------------------------ situation / calling ------------------------------ */
@@ -94,7 +107,13 @@ function startCall(g) {
 function previewFormation(g) { const pp = g.play, dc = g.defCall; g.play = pp || (g.off === 'U' ? 'pass_quick' : g.plan); g.defCall = dc || 'base'; setupPlay(g); g.play = pp; g.defCall = dc; g.phase = 'call'; g.mode = 'idle'; g.carrier = null; }
 
 export function call(g, id) {
+  if (g.phase === 'pat') { if (id === 'kick1') return patKick(g, g.patTeam); if (id === 'go2') return startTwo(g, g.patTeam); return false; }
   if (g.phase !== 'call') return false;
+  if (id === 'timeout') {
+    if (g.to.U > 0 && g.lastRunoff > 0) { g.clock = Math.min(g.qlen, g.clock + g.lastRunoff); g.lastRunoff = 0; g.to.U--; banner(g, 'TIMEOUT', `${g.to.U} left this half`, 'info'); sfx(g, 'whistle'); return true; }
+    return false;
+  }
+  if (id === 'hurry') { g.hurry = !g.hurry; return true; }
   if (g.off === 'U') {
     if (id === 'punt' || id === 'fg') { if (g.down !== 4 && id === 'punt') return false; return special(g, id, 'U'); }
     if (!OFF_PLAYS[id]) return false;
@@ -171,7 +190,7 @@ function setupPlay(g) {
   const mk = (team, side, role, x, y) => {
     const r = RT[role], cpuD = team === 'C' && side === 'D', cpuO = team === 'C' && side === 'O';
     const p = {
-      id: g.pl.length, team, side, role, num: NUM[role], x, y, hx: x, hy: y, vx: 0, vy: 0, face: side === 'O' ? 1 : -1, spd: r.spd * (cpuD ? lv.dSpd : 1),
+      id: g.pl.length, team, side, role, num: NUM[role], name: g.roster[team][role], x, y, hx: x, hy: y, vx: 0, vy: 0, face: side === 'O' ? 1 : -1, spd: r.spd * (cpuD ? lv.dSpd : 1),
       hands: r.hands, brk: r.brk, tkl: r.tkl + (cpuD ? lv.tkl : 0), acc: (r.acc || 0.5) * (cpuO ? lv.qb : 1), st: 1, stun: 0, cd: 0, jk: 0, jcd: 0, stiff: 0, scd: 0,
       lunge: 0, lcd: 0, slow: 0, eng: -1, blk: false, asg: -1, hold: 0, route: null, ri: 0, lx: 0, ly: 1,
     };
@@ -297,7 +316,7 @@ function endQuarter(g) {
   g.qEnd = false;
   if (g.ot) return finish(g);
   if (g.q === 1 || g.q === 3) { g.q++; g.clock = g.qlen; banner(g, `END OF QUARTER ${g.q - 1}`, 'Switching ends', 'info'); return startCall(g); }
-  if (g.q === 2) { g.q = 3; g.clock = g.qlen; banner(g, 'HALFTIME', 'Second half: they get the ball', 'info'); g.kickInfo = null; return kickoff(g, 'C'); }
+  if (g.q === 2) { g.q = 3; g.clock = g.qlen; g.to = { U: 3, C: 3 }; banner(g, 'HALFTIME', 'Second half: they get the ball', 'info'); g.kickInfo = null; return kickoff(g, 'C'); }
   if (g.score.U === g.score.C) {
     g.ot = true; g.q = 5; g.clock = 120; banner(g, 'OVERTIME', 'First score wins', 'good');
     return kickoff(g, rnd(g) < 0.5 ? 'U' : 'C');
@@ -458,10 +477,10 @@ function qbAI(g, qb, dt) {
     let best = null, bs = -99;
     for (const r of targets(g)) { const sep = sepOf(g, r), depth = Math.max(0, r.y - L), s = sep + Math.min(depth, 24) * (play === 'pass_deep' ? 0.14 : 0.05) - (r.role === 'RB' && play !== 'screen' ? 0.4 : 0); if (s > bs) { bs = s; best = { r, sep }; } }
     const wait = t - readT;
-    const need = play === 'screen' ? -9 : wait < 0.4 ? 2.7 : wait < 1.1 ? 2.0 : 1.5;
+    const need = play === 'screen' ? -9 : wait < 0.4 ? 2.9 : wait < 1.1 ? 2.2 : 1.6;
     const pn = pressed ? Math.min(need, 2.3) : need;
     if (best && best.sep >= pn) throwTo(g, best.r);
-    else if (wait > 2.4 || qb.pt > 0.55) { if (best && best.sep > 1.0 && rnd(g) < 0.6) throwTo(g, best.r); else throwAway(g); }
+    else if (wait > 2.4 || qb.pt > 0.85) { if (best && best.sep > 1.0 && rnd(g) < 0.6) throwTo(g, best.r); else throwAway(g); }
   }
   return { tx: CX + (Math.sin(t * 1.3) * 0.8), ty: pocketY, sp: t < 0.9 ? 0.85 : 0.3 };
 }
@@ -539,7 +558,7 @@ function airAI(g, p) {
 
 /* -------------------------------- live play -------------------------------- */
 function stepLive(g, dt) {
-  g.t += dt; g.clock = Math.max(0, g.clock - dt); if (g.clock <= 0) g.qEnd = true;
+  g.t += dt; if (!g.twoPt) { g.clock = Math.max(0, g.clock - dt); if (g.clock <= 0) g.qEnd = true; }
   for (const p of g.pl) { p.stun = Math.max(0, p.stun - dt); p.cd = Math.max(0, p.cd - dt); p.jk = Math.max(0, p.jk - dt); p.jcd = Math.max(0, p.jcd - dt); p.stiff = Math.max(0, p.stiff - dt); p.scd = Math.max(0, p.scd - dt); p.lunge = Math.max(0, p.lunge - dt); p.lcd = Math.max(0, p.lcd - dt); p.slow = Math.max(0, p.slow - dt); if (p.beat) p.beat = Math.max(0, p.beat - dt); }
   if (g.mode === 'handoff' && g.t >= 0.42) doHandoff(g);
   if (g.mode === 'drop' && g.carrier && g.carrier.y > g.los + 0.35) g.mode = 'run';
@@ -615,7 +634,7 @@ function doBlocks(g, dt) {
     if (b.eng >= 0) {
       const df = g.pl[b.eng];
       if (!df || df.eng !== b.id) { b.eng = -1; continue; }
-      const h = (pass ? 0.42 : b.role[0] === 'W' ? 0.7 : 0.4) * (df.team === 'C' ? g.level.rush : 1) * (g.mode === 'drop' && g.defCall === 'blitz' && df.role[0] === 'L' ? 1.4 : 1);
+      const h = (pass ? 0.62 : b.role[0] === 'W' ? 0.7 : 0.4) * (df.team === 'C' ? g.level.rush : 1) * (g.mode === 'drop' && g.defCall === 'blitz' && df.role[0] === 'L' ? 1.4 : 1);
       b.hold -= dt;
       if (rnd(g) < h * dt || b.hold <= 0) { b.eng = -1; df.eng = -1; df.cd = 0; b.beat = 0.6; b.asg = -1; continue; }
       const ref = car || { x: CX, y: g.los - 4 };
@@ -677,7 +696,7 @@ export function throwTo(g, r) {
   const qb = g.carrier; if (!qb || qb.role !== 'QB' || g.fl || g.mode !== 'drop') return false;
   const d = dist(qb, r), dur = clamp(d / 25 + 0.14, 0.3, 1.7);
   const press = pressureOf(g, qb), mv = Math.hypot(qb.vx, qb.vy);
-  const sd = (0.4 + d * 0.03 + (mv > 2.5 ? 0.35 : 0) + (press < 2.6 ? 0.4 : 0)) * (qb.team === 'C' ? 1 / g.level.qb : 1);
+  const sd = (0.5 + d * 0.034 + (mv > 2.5 ? 0.35 : 0) + (press < 2.6 ? 0.4 : 0)) * (qb.team === 'C' ? 1 / g.level.qb : 1);
   const lx = r.x + r.vx * dur * 0.85 + gauss(g) * sd * 0.8, ly = r.y + r.vy * dur * 0.85 + gauss(g) * sd;
   g.fl = { fx: qb.x, fy: qb.y, tx: lx, ty: ly, t: 0, dur, arc: 1.2 + d * 0.09, sd };
   g.tgt = r; g.mode = 'air'; g.carrier = null; g.thrower = qb; g.stat[qb.team].att++; g.ev.push({ k: 'throw' }); sfx(g, 'throw');
@@ -696,6 +715,7 @@ function flight(g, dt) {
   // swat window for user
   if (f.t < f.dur) return;
   const land = { x: f.tx, y: f.ty }, qb = g.thrower;
+  g.landY = f.ty;
   if (f.away) { banner(g, 'THROWN AWAY', '', 'info'); return endPlay(g, 'inc', g.los); }
   const r = g.tgt, dr = dist(r, land);
   let dd = 99, dp = null; for (const d of g.pl) { if (d.team === r.team) continue; const x = dist(d, land); if (x < dd) { dd = x; dp = d; } }
@@ -704,10 +724,10 @@ function flight(g, dt) {
   let pC = r.hands, pI = 0;
   if (dr > 2.7) pC = 0;
   else pC *= 1 - Math.max(0, dr - 1.5) * 0.12;
-  if (dd < 3.6) { pC -= dd < 1.1 ? 0.3 : dd < 1.9 ? 0.17 : 0.07; pI = (dd < 1.1 ? 0.3 : dd < 1.9 ? 0.16 : dd < 2.7 ? 0.07 : 0.025) * (dp.hands + 0.25) * (dp.team === 'C' ? g.level.cover : 1) * (dr > 2.7 ? 1.2 : 1); }
+  if (dd < 3.6) { pC -= dd < 1.1 ? 0.36 : dd < 1.9 ? 0.24 : 0.1; pI = (dd < 1.1 ? 0.42 : dd < 1.9 ? 0.24 : dd < 2.7 ? 0.1 : 0.04) * (dp.hands + 0.25) * (dp.team === 'C' ? g.level.cover : 1) * (dr > 2.7 ? 1.2 : 1); }
   if (sw && userDef && dp && dp.team === 'U' && dd < 3) { pI *= 2.4; pC -= 0.25; }
   if (sw && userOffTgt && dr < 3) { pC += 0.14; pI *= 0.5; }
-  pC = clamp(pC, 0, 0.97);
+  pC = clamp(pC * 0.92, 0, 0.95);
   const u = rnd(g);
   if (u < pI) {
     // interception
@@ -734,29 +754,64 @@ function flight(g, dt) {
 
 /* ------------------------------ ending a play ------------------------------ */
 function touchdown(g, team) {
+  if (g.twoPt) {
+    const t = g.twoPt.team, good = !g.turn && team === t;
+    if (good) { addScore(g, t, 2); banner(g, 'TWO-POINT GOOD!', `${g.names[t]}`, t === 'U' ? 'good' : 'bad'); g.ev.push({ k: 'burst', x: g.carrier.x, y: g.carrier.y, c: 'td' }); }
+    else banner(g, 'TWO-POINT NO GOOD', '', t === 'U' ? 'bad' : 'good');
+    g.phase = 'dead'; g.timer = 1.9; g.mode = 'idle'; g.carrier = null; g.fl = null; g.pendingAfter = () => finishTwo(g); return;
+  }
   g.stat[team].td++; addScore(g, team, 6);
   banner(g, 'TOUCHDOWN!', `${g.names[team]}`, team === 'U' ? 'good' : 'bad'); g.ev.push({ k: 'burst', x: g.carrier.x, y: g.carrier.y, c: 'td' });
   if (g.carrier) { const yds = Math.max(0, Math.round(g.carrier.y - g.los)); if (!g.turn) { (g.caught ? addPass : addRush)(g, team, yds); } }
   g.phase = 'dead'; g.timer = 2.1; g.mode = 'idle'; g.carrier = null; g.hint = null;
-  const kick = other(team);
-  g.pendingAfter = () => {
-    if (g.ot) return finish(g);
-    const good = rnd(g) < 0.93; if (good) addScore(g, team, 1);
-    g.kickInfo = { icon: '🥅', title: good ? 'EXTRA POINT GOOD' : 'EXTRA POINT MISSED', text: `${g.names[team]} ${g.score[team] > g.score[kick] ? 'lead' : g.score[team] === g.score[kick] ? 'tie it' : 'trail'} ${g.score.U}–${g.score.C}.`, c: good ? 'good' : 'bad' };
-    g.phase = 'kick'; g.timer = 1.7; g.after = () => { if (g.qEnd || g.clock <= 0) { g.qEnd = true; return endQuarter(g); } kickoff(g, kick); };
-  };
+  g.pendingAfter = () => afterTD(g, team);
   g.log.push(`TD ${team}`);
+}
+function afterTD(g, team) {
+  if (g.ot) return finish(g);
+  if (team === 'U' && !g.auto) { g.phase = 'pat'; g.patTeam = team; g.kickInfo = null; return; }
+  const diff = g.score[other(team)] - g.score[team];
+  if (diff === 2 && g.q >= 3) return startTwo(g, team);
+  patKick(g, team);
+}
+function patKick(g, team) {
+  const kick = other(team), good = rnd(g) < 0.93; if (good) addScore(g, team, 1);
+  g.kickInfo = { icon: '🥅', title: good ? 'EXTRA POINT GOOD' : 'EXTRA POINT MISSED', text: `${g.names[team]} ${g.score[team] > g.score[kick] ? 'lead' : g.score[team] === g.score[kick] ? 'tie it' : 'trail'} ${g.score.U}–${g.score.C}.`, c: good ? 'good' : 'bad' };
+  g.phase = 'kick'; g.timer = 1.7; g.after = () => { if (g.qEnd || g.clock <= 0) { g.qEnd = true; return endQuarter(g); } kickoff(g, kick); }; return true;
+}
+function startTwo(g, team) {
+  g.twoPt = { team }; g.off = team; g.f = 98; g.down = 1; g.toGo = 2; g.firstAt = 100; g.drive = []; g.kickInfo = null; g.phase = 'call'; startCall(g); return true;
+}
+function finishTwo(g) {
+  const t = g.twoPt ? g.twoPt.team : g.off; g.twoPt = null;
+  if (g.qEnd || g.clock <= 0) { g.qEnd = true; return endQuarter(g); }
+  kickoff(g, other(t));
 }
 const addRush = (g, t, y) => { g.stat[t].rush += y; }, addPass = (g, t, y) => { g.stat[t].pass += y; };
 
+function flag(g, kind) {
+  const o = g.off, d = other(o);
+  const opts = [['Offside', d, 5, false, 3], ['False start', o, -5, false, 2.5], ['Holding', o, -10, false, 2], ['Defensive holding', d, 5, true, 1.2]];
+  if (kind === 'inc' && g.tgt) opts.push(['Pass interference', d, 0, true, 3.5]);
+  let tot = 0; for (const x of opts) tot += x[4]; let r = rnd(g) * tot, pick = opts[0]; for (const x of opts) { r -= x[4]; if (r <= 0) { pick = x; break; } }
+  const [name, team, yds, auto] = pick; let f2 = g.f;
+  if (name === 'Pass interference') f2 = clamp(Math.round((g.landY ?? g.los) - 10), g.f, 99); else f2 = clamp(g.f + yds, 1, 98);
+  g.f = f2;
+  if (auto || f2 >= g.firstAt) { g.down = 1; g.firstAt = Math.min(100, f2 + 10); g.toGo = g.firstAt - f2; } else g.toGo = Math.max(1, g.firstAt - f2);
+  const gain = f2 - (g.los - 10);
+  banner(g, `FLAG: ${name}`, `${g.names[team]}${gain ? `, ${gain > 0 ? '+' : ''}${gain} yards` : ''}${auto ? ', first down' : ', replay the down'}`, team === 'U' ? 'bad' : 'good');
+  g.phase = 'dead'; g.timer = 1.7; g.hint = null; g.caught = false; g.lastRunoff = 0; return true;
+}
 function endPlay(g, kind, y, by) {
   if (g.phase !== 'live') return;
   const o = g.off, car = g.carrier, L10 = g.los;
-  g.phase = 'dead'; g.timer = 1.25; g.plays++; g.mode = 'idle'; g.fl = null;
+  g.phase = 'dead'; g.timer = 1.25; g.plays++; g.mode = 'idle'; g.fl = null; g.lastRunoff = 0; sfx(g, 'whistle');
   const wasCarrier = car; g.carrier = null;
+  if (g.twoPt) { banner(g, 'TWO-POINT NO GOOD', '', g.twoPt.team === 'U' ? 'bad' : 'good'); g.timer = 1.5; g.pendingAfter = () => finishTwo(g); return; }
   let gain = Math.round(y - L10);
-  let runoff = 17; if ((g.q === 2 || g.q >= 4) && g.clock < 40) runoff = 5;
+  let runoff = 17; if (((g.q === 2 || g.q >= 4) && g.clock < 40) || (o === 'U' && g.hurry) || (o === 'C' && late(g) && trailBy(g, 'C') > 0)) runoff = 5;
   const label = (t, s = '', c = 'info') => banner(g, t, s, c);
+  if (!g.turn && kind !== 'fumble' && rnd(g) < 0.05 && flag(g, kind)) return;
 
   if (g.turn) {
     // return after a turnover: ball spot where the returner went down
@@ -791,7 +846,7 @@ function endPlay(g, kind, y, by) {
   }
   let f2 = clamp(Math.round(y - 10), 1, 99);
   if (kind === 'inc') f2 = g.f;
-  g.clock = Math.max(0, g.clock - runoff);
+  g.clock = Math.max(0, g.clock - runoff); g.lastRunoff = runoff;
   g.f = f2;
   if (kind !== 'inc' && f2 >= g.firstAt) {
     g.down = 1; g.firstAt = Math.min(100, f2 + 10); g.toGo = g.firstAt - f2;

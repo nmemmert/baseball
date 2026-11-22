@@ -85,3 +85,9 @@ Pick a play, then control the action with your thumbs:
 - Four quarters (Short / Normal / Long), sudden-death overtime, three difficulty levels, a demo mode, and a saved win-loss record.
 
 The simulation (`src/arcade.js`) is DOM-free and covered by `test/arcade.test.js`; the canvas UI is `src/arcadeui.js`.
+
+### Gridiron v2
+
+Landscape layout, penalties (offside, false start, holding, pass interference), two-point tries, timeouts and hurry-up,
+named players, a seven-game season with a title, four practice drills, saved games you can continue, touchdown replays,
+more sound (whistles, hits, crowd), and control settings (stick size, button size, left-handed layout).
