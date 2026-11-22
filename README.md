@@ -91,3 +91,15 @@ The simulation (`src/arcade.js`) is DOM-free and covered by `test/arcade.test.js
 Landscape layout, penalties (offside, false start, holding, pass interference), two-point tries, timeouts and hurry-up,
 named players, a seven-game season with a title, four practice drills, saved games you can continue, touchdown replays,
 more sound (whistles, hits, crowd), and control settings (stick size, button size, left-handed layout).
+
+## Diamond: baseball you play (not manage)
+
+A fourth option on the start screen, **Baseball: You Play**. You bat, pitch, make throws and run the bases in real time:
+
+- **Batting**: drag the aim pad to place the bat circle, then SWING as the ball reaches the plate. Timing decides pull or push, bat height decides fly ball or grounder.
+- **Pitching**: choose a fastball, slider, curve or changeup, aim at a spot, then stop a timing meter for accuracy.
+- **Fielding**: when runners are on, choose where to throw (1st, 2nd, 3rd, Home) for force outs and double plays.
+- **Running**: STEAL with a runner on first, STRETCH a hit into an extra base (and risk being thrown out).
+- 3, 5 or 9 innings, three difficulty levels, extra innings, walk-offs, saved win-loss record.
+
+The simulation is `src/diamond.js` (DOM-free, tested in `test/diamond.test.js`); the canvas UI is `src/diamondui.js`.
