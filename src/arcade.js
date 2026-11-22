@@ -349,7 +349,7 @@ function pickCtl(g, dt) {
   if (g.mode === 'handoff') return g.off === 'U' ? g.r.ORB : null;
   if (car && car.team === 'U') return car;
   if (g.mode === 'air' && g.fl) {
-    if (g.off === 'U' && !g.turn) return g.tgt;
+    if (g.off === 'U' && !g.turn) return null; // the receiver runs to the ball on his own so a held stick cannot pull him off it
     const land = { x: g.fl.tx, y: g.fl.ty };
     return nearestTo(users(g).filter((p) => p.side === 'D' || g.turn), land, g.pl[g.ctlId], g);
   }
@@ -729,10 +729,12 @@ function flight(g, dt) {
   let dd = 99, dp = null; for (const d of g.pl) { if (d.team === r.team) continue; const x = dist(d, land); if (x < dd) { dd = x; dp = d; } }
   const sw = Math.abs(g.t - g.swatT) < 0.45 && g.swatT > -5;
   const userDef = r.team === 'C', userOffTgt = r.team === 'U';
-  let pC = r.hands, pI = 0;
-  if (dr > 2.7) pC = 0;
+  const assist = r.team === 'U' && !g.auto;
+  let pC = r.hands + (assist ? 0.12 : 0), pI = 0;
+  if (dr > (assist ? 3.2 : 2.7)) pC = 0;
   else pC *= 1 - Math.max(0, dr - 1.5) * 0.12;
   if (dd < 3.6) { pC -= dd < 1.1 ? 0.36 : dd < 1.9 ? 0.24 : 0.1; pI = (dd < 1.1 ? 0.42 : dd < 1.9 ? 0.24 : dd < 2.7 ? 0.1 : 0.04) * (dp.hands + 0.25) * (dp.team === 'C' ? g.level.cover : 1) * (dr > 2.7 ? 1.2 : 1); }
+  if (assist) pI *= 0.55;
   if (sw && userDef && dp && dp.team === 'U' && dd < 3) { pI *= 2.4; pC -= 0.25; }
   if (sw && userOffTgt && dr < 3) { pC += 0.14; pI *= 0.5; }
   pC = clamp(pC * 0.92, 0, 0.95);
