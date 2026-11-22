@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { newArcade, step, call, playBot, throwTo, targets, OFF_PLAYS, DEF_CALLS, fgInfo, downText, snapshot, resumeArcade } from '../src/arcade.js';
+import { newArcade, step, call, playBot, throwTo, targets, OFF_PLAYS, DEF_CALLS, fgInfo, downText, snapshot, resumeArcade, uncall } from '../src/arcade.js';
 
 test('bot games always finish with sane scores at every level', () => {
   for (const level of [0, 1, 2]) {
@@ -36,7 +36,7 @@ test('a quarterback who never throws gets sacked', () => {
   for (let seed = 1; seed <= 12; seed++) {
     const g = newArcade({ seed }); call(g, 'pass_deep');
     // user-controlled QB, idle sticks, defence on the blitz
-    g.defCall = 'blitz';
+    g.defCall = 'blitz'; g.in.hike = true;
     let n = 0; while (g.phase !== 'dead' && n++ < 3000) step(g, 1 / 30);
     if (g.ev.some((e) => e.k === 'banner' && e.t === 'SACKED!')) sacks++;
   }
@@ -47,6 +47,8 @@ test('throwing to an open receiver can complete and the down advances', () => {
   let done = 0;
   for (let seed = 1; seed <= 30; seed++) {
     const g = newArcade({ seed }); call(g, 'pass_quick');
+    assert.equal(g.phase, 'set'); step(g, 1 / 30); assert.equal(g.phase, 'set', 'waits for the hike');
+    g.in.hike = true; step(g, 1 / 30);
     let n = 0; while (g.phase !== 'live' && n++ < 200) step(g, 1 / 30);
     n = 0; while (g.t < 1.0 && n++ < 200) step(g, 1 / 30);
     assert.equal(g.mode, 'drop');
@@ -117,4 +119,9 @@ test('names exist for every player and opponents differ in strength', () => {
   const g = newArcade({ seed: 4, opp: { name: 'X', col: '#fff', str: 1.06 } });
   assert.ok(g.pl.every((p) => /^[A-Z]\. \w+/.test(p.name)));
   assert.ok(g.level.dSpd > 0.97);
+});
+
+test('the play can be changed before the hike', () => {
+  const g = newArcade({ seed: 6 }); assert.ok(call(g, 'run_in')); assert.equal(g.phase, 'set');
+  assert.ok(uncall(g)); assert.equal(g.phase, 'call'); assert.ok(call(g, 'pass_deep')); assert.equal(g.play, 'pass_deep');
 });

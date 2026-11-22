@@ -52,7 +52,7 @@ const other = (t) => (t === 'U' ? 'C' : 'U');
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 export function rnd(g) { let t = (g.rs = (g.rs + 0x6D2B79F5) | 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
 const gauss = (g) => { let s = 0; for (let i = 0; i < 4; i++) s += rnd(g); return (s - 2) * 1.73; };
-const blankIn = () => ({ mx: 0, my: 0, sprint: false, juke: false, stiff: false, tackle: false, swat: false, sw: false, throw: -1, away: false, kick: false });
+const blankIn = () => ({ mx: 0, my: 0, sprint: false, juke: false, stiff: false, tackle: false, swat: false, sw: false, throw: -1, away: false, kick: false, hike: false });
 const banner = (g, t, s = '', c = 'info') => g.ev.push({ k: 'banner', t, s, c });
 const sfx = (g, n) => g.ev.push({ k: 'sfx', n });
 const ord = (n) => `${n}${['th', 'st', 'nd', 'rd'][n > 3 && n < 21 ? 0 : n % 10 < 4 ? n % 10 : 0]}`;
@@ -122,8 +122,13 @@ export function call(g, id) {
     if (!DEF_CALLS[id]) return false;
     g.defCall = id; g.play = g.plan;
   }
-  setupPlay(g); g.phase = 'set'; g.timer = 0.85; g.hintShown = false;
+  setupPlay(g); g.phase = 'set'; g.timer = 0.85; g.hintShown = false; g.waitHike = !g.auto;
   return true;
+}
+/** Back out of a chosen play to the play screen (before the snap). */
+export function uncall(g) {
+  if (g.phase !== 'set' || !g.waitHike) return false;
+  g.waitHike = false; g.play = g.off === 'U' ? null : g.plan; g.phase = 'call'; previewFormation(g); g.hint = coachHint(g); return true;
 }
 
 function weighted(g, w) { const ks = Object.keys(w); let tot = 0; for (const k of ks) tot += w[k]; let r = rnd(g) * tot; for (const k of ks) { r -= w[k]; if (r <= 0) return k; } return ks[0]; }
@@ -287,14 +292,17 @@ export function step(g, dt) {
   if (g.over) return;
   switch (g.phase) {
     case 'call': if (g.auto) autoCall(g); settle(g, dt); break;
-    case 'set': g.timer -= dt; settle(g, dt); if (g.timer <= 0) { g.phase = 'live'; g.t = 0; sfx(g, 'snap'); } break;
+    case 'set':
+      settle(g, dt);
+      if (g.waitHike && !g.auto) { if (g.in.hike) { g.waitHike = false; g.timer = 0.45; } break; }
+      g.timer -= dt; if (g.timer <= 0) { g.phase = 'live'; g.t = 0; sfx(g, 'snap'); } break;
     case 'live': stepLive(g, dt); break;
     case 'dead': g.timer -= dt; coast(g, dt); if (g.timer <= 0) advance(g); break;
     case 'kick': g.timer -= dt; if (g.timer <= 0) { const a = g.after; g.after = null; g.kickInfo = null; if (a) a(); } break;
     case 'meter': stepMeter(g, dt); break;
     default: break;
   }
-  const i = g.in; i.juke = i.stiff = i.tackle = i.swat = i.sw = i.away = i.kick = false; i.throw = -1;
+  const i = g.in; i.juke = i.stiff = i.tackle = i.swat = i.sw = i.away = i.kick = i.hike = false; i.throw = -1;
 }
 function settle(g, dt) { for (const p of g.pl) { p.vx *= 0.8; p.vy *= 0.8; } void dt; }
 function coast(g, dt) { for (const p of g.pl) { p.vx *= 0.9; p.vy *= 0.9; p.x += p.vx * dt; p.y += p.vy * dt; } }

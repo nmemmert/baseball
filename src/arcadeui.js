@@ -1,6 +1,6 @@
 // Skipper Gridiron UI: canvas field + virtual stick + action buttons. The simulation lives in arcade.js.
 import {
-  newArcade, resumeArcade, snapshot, step, call, targets, bestOff, fgInfo, downText, spotText, OFF_PLAYS, DEF_CALLS, LEVELS, OPPONENTS, W, LEN, EZ, GOAL,
+  newArcade, resumeArcade, snapshot, step, call, uncall, targets, bestOff, fgInfo, downText, spotText, OFF_PLAYS, DEF_CALLS, LEVELS, OPPONENTS, W, LEN, EZ, GOAL,
 } from './arcade.js';
 import { fx } from './feedback.js';
 
@@ -17,6 +17,32 @@ const DRILLS = [
   { t: 'Drill 3 of 4: Make the tackle', tip: 'Chase the runner. Tap TACKLE when you are close. Hold them to 3 yards or less.', off: 'C', play: 'run_in', ok: (r) => r.gain <= 3 && !r.td },
   { t: 'Drill 4 of 4: Field goal', tip: 'Tap KICK when the marker is in the middle green zone.', off: 'U', play: 'fg', f: 70, ok: (r) => r.fg },
 ];
+function diagram(id, defense) {
+  const B = '#4aa8ff', Rd = '#ff7b7b', Y = '#ffd33d';
+  const dot = (x, y, c, r = 3.4) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${c}" stroke="#fff" stroke-width=".8"/>`;
+  const ar = (d, dash, c = Y) => `<path d="${d}" fill="none" stroke="${c}" stroke-width="2.4" stroke-linecap="round" ${dash ? 'stroke-dasharray="3 3"' : ''} marker-end="url(#ah${c === Y ? 'y' : 'r'})"/>`;
+  let b = '';
+  if (!defense) {
+    const run = id === 'run_in' || id === 'run_out';
+    const qb = run ? [50, 79] : [50, 84], rb = run ? [50, 90] : [62, 84];
+    b += ar(...({
+      run_in: ['M50 88 L50 38'], run_out: ['M50 88 Q84 82 90 40'], pass_quick: ['M10 68 L10 60 L34 46'], pass_deep: ['M10 68 L10 12'], screen: ['M62 84 L80 86 L88 74'],
+    }[id]));
+    if (id === 'pass_quick') b += ar('M90 68 L90 50 L90 54') + ar('M70 68 L70 60 L86 56') + ar('M62 84 L84 82');
+    if (id === 'pass_deep') b += ar('M90 68 L90 40 L64 14') + ar('M70 68 L70 44') + ar('M62 84 L84 82', true);
+    if (id === 'screen') b += ar('M10 68 L10 16', true) + ar('M90 68 L90 16', true) + ar('M42 66 L68 76', false, Y);
+    b += dot(42, 68, B) + dot(58, 68, B) + dot(70, 68, B) + dot(10, 68, B) + dot(90, 68, B) + dot(...qb, B, 4) + dot(...rb, B);
+  } else {
+    const dls = [[42, 58], [58, 58]], lbs = [[30, 46], [70, 46]], cbs = [[10, 52], [90, 52]], sf = [50, 28];
+    const rush = (id === 'blitz' ? ar('M30 46 L44 74') + ar('M70 46 L56 74') + ar('M50 28 L70 46') : '') + ar('M42 58 L46 76') + ar('M58 58 L54 76');
+    if (id === 'base') b += rush + ar('M30 46 L30 36', true) + ar('M70 46 L70 36', true) + ar('M10 52 L10 38') + ar('M90 52 L90 38');
+    if (id === 'blitz') b += rush + ar('M10 52 L10 36') + ar('M90 52 L90 36');
+    if (id === 'zone') b += '<g fill="rgba(255,211,61,.18)" stroke="#ffd33d" stroke-dasharray="3 3"><ellipse cx="20" cy="30" rx="16" ry="12"/><ellipse cx="50" cy="16" rx="18" ry="11"/><ellipse cx="80" cy="30" rx="16" ry="12"/><ellipse cx="34" cy="46" rx="13" ry="9"/><ellipse cx="66" cy="46" rx="13" ry="9"/></g>';
+    if (id === 'runstop') b += ar('M42 58 L47 74') + ar('M58 58 L53 74') + ar('M30 46 L46 70') + ar('M70 46 L54 70') + ar('M10 52 L32 66') + ar('M90 52 L68 66') + ar('M50 28 L50 62');
+    b += [...dls, ...lbs, ...cbs, sf].map(([x, y]) => dot(x, y, Rd)).join('') + [[42, 70], [58, 70], [70, 70], [10, 70], [90, 70]].map(([x, y]) => dot(x, y, B, 2.6)).join('');
+  }
+  return `<svg class="ar-dg" viewBox="0 0 100 100" aria-hidden="true"><defs><marker id="ahy" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#ffd33d"/></marker><marker id="ahr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#ff7b7b"/></marker></defs><rect width="100" height="100" rx="8" fill="#1d6a39"/><line x1="0" x2="100" y1="${defense ? 70 : 68}" y2="${defense ? 70 : 68}" stroke="#4aa8ff" stroke-width="1.6"/>${b}</svg>`;
+}
 const ROLE_TAG = { WR1: 'WR', WR2: 'WR', TE: 'TE', RB: 'RB' };
 
 export const ARCADE_HOW = [
@@ -37,7 +63,7 @@ export function openArcade({ onClose } = {}) {
     sig: '', bsig: '', ssig: '', raf: 0, last: 0, acc: 0, keys: {}, stick: { id: -1, ox: 0, oy: 0 }, tip: 0, held: {}, endSaved: false,
     mode: 'quick', oppIdx: 0, rbuf: [], rclip: null, rp: null, rtick: 0, lastPhase: '', drillDone: false, sawTD: false, f0: 0,
   };
-  S.rec.set = Object.assign({ lv: 1, ql: 240, st: 'm', bs: 'm', lh: 0 }, S.rec.set || {}); S.rec.tips = S.rec.tips || {};
+  S.rec.set = Object.assign({ lv: 1, ql: 240, st: 'm', bs: 'm', lh: 0, gs: 's' }, S.rec.set || {}); S.rec.tips = S.rec.tips || {};
   const root = document.createElement('div'); root.id = 'arcade';
   root.innerHTML = `<canvas class="ar-cv"></canvas>
     <div class="ar-top"><div class="ar-sb"><span class="ar-tm" data-k="u"></span><b class="ar-sc" data-k="us">0</b><span class="ar-mid"><i data-k="q"></i><em data-k="sit"></em></span><b class="ar-sc" data-k="cs">0</b><span class="ar-tm" data-k="c"></span></div><button class="ar-x" data-a="pause" aria-label="Pause">❚❚</button></div>
@@ -107,6 +133,7 @@ export function openArcade({ onClose } = {}) {
       <div class="ar-row"><button data-a="practice">🎓 Practice</button><button data-a="demo">👀 Demo</button></div>
       <div class="ar-opt"><span>Difficulty</span>${seg('lv', s.lv, LEVELS.map((l) => [l.name, l.id]))}</div>
       <div class="ar-opt"><span>Game length</span>${seg('ql', s.ql, QLEN.map(([n, v]) => [n, v]))}</div>
+      <div class="ar-opt"><span>Game speed</span>${seg('gs', s.gs, [['Slower (easier)', 's'], ['Normal', 'n']])}</div>
       <div class="ar-opt"><span>Stick size</span>${seg('st', s.st, [['Small', 's'], ['Medium', 'm'], ['Large', 'l']])}</div>
       <div class="ar-opt"><span>Button size</span>${seg('bs', s.bs, [['Small', 's'], ['Medium', 'm'], ['Large', 'l']])}</div>
       <div class="ar-opt"><span>Hand</span>${seg('lh', s.lh, [['Right-handed', 0], ['Left-handed', 1]])}</div>
@@ -134,13 +161,13 @@ export function openArcade({ onClose } = {}) {
   modal(menuHtml());
 
   /* ----------------------------------- call sheet ----------------------------------- */
-  function sheetKey(g) { return `${g.phase}|${g.off}|${g.down}|${g.f}|${g.q}|${g.kickInfo ? g.kickInfo.title : ''}|${g.meter ? 1 : 0}|${g.hurry ? 1 : 0}|${g.to.U}|${g.lastRunoff > 0 ? 1 : 0}|${g.twoPt ? 1 : 0}`; }
+  function sheetKey(g) { return `${g.phase}|${g.off}|${g.down}|${g.f}|${g.q}|${g.kickInfo ? g.kickInfo.title : ''}|${g.meter ? 1 : 0}|${g.hurry ? 1 : 0}|${g.to.U}|${g.lastRunoff > 0 ? 1 : 0}|${g.twoPt ? 1 : 0}|${g.waitHike ? 1 : 0}`; }
   function drawSheet(force) {
     const g = S.g, sh = $('.ar-sheet');
     if (!g || S.view !== 'game') { sh.innerHTML = ''; sh.className = 'ar-sheet'; return; }
     const key = sheetKey(g);
     if (!force && key === S.ssig) { if (g.phase === 'meter') updateMeter(); return; }
-    S.ssig = key;
+    S.ssig = key; root.classList.toggle('hiking', g.phase === 'set' && !!g.waitHike && !S.demo);
     if (g.phase === 'call' && !S.demo && S.mode !== 'drill' && !g.twoPt) { const sn = snapshot(g); if (sn) { S.rec.save = { s: sn, mode: S.mode, oi: S.oppIdx }; store(S.rec); } }
     if (g.phase === 'pat' && !S.demo) {
       sh.className = 'ar-sheet on kick good'; sh.innerHTML = `<div class="ar-kc"><i>🏈</i><b>TOUCHDOWN! ${g.score.U}–${g.score.C}</b><small>Choose your extra point</small><div class="ar-cards sp pat"><button class="ar-pc" data-call="kick1"><i>🥅</i><b>Kick it</b><small>+1 point, very safe</small></button><button class="ar-pc" data-call="go2"><i>💪</i><b>Go for 2</b><small>One play from the 2</small></button></div></div>`;
@@ -149,9 +176,14 @@ export function openArcade({ onClose } = {}) {
       const cards = o ? Object.entries(OFF_PLAYS).map(([id, p]) => card(id, p, id === best)) : Object.entries(DEF_CALLS).map(([id, p]) => card(id, p, false));
       let extra = '';
       if (o && g.down === 4) { const fi = fgInfo(g); extra = `<div class="ar-cards sp"><button class="ar-pc" data-call="punt"><i>🦵</i><b>Punt</b><small>Give it away safely</small></button><button class="ar-pc" data-call="fg"><i>🥅</i><b>Field Goal</b><small>${fi.dist} yds · about ${fi.pct}%</small></button></div>`; }
-      if (!g.twoPt && S.mode !== 'drill') extra += `<div class="ar-cards sp tm"><button class="ar-pc sm" data-call="timeout" ${g.to.U > 0 && g.lastRunoff > 0 ? '' : 'disabled'}><b>⏱ Timeout (${g.to.U})</b><small>Get back the last ${g.lastRunoff || 0}s</small></button>${o ? `<button class="ar-pc sm ${g.hurry ? 'on' : ''}" data-call="hurry"><b>⚡ Hurry-up: ${g.hurry ? 'ON' : 'off'}</b><small>Runs less clock</small></button>` : '<span></span>'}</div>`;
-      sh.className = 'ar-sheet on call';
+      if (!g.twoPt && S.mode !== 'drill') extra += `<div class="ar-cards sp tm"><button class="ar-pc sm" data-call="timeout" ${g.to.U > 0 && g.lastRunoff > 0 ? '' : 'disabled'}><b>⏱ Timeout (${g.to.U})</b><small>${g.lastRunoff > 0 ? `Get back the last ${g.lastRunoff}s` : 'Use after a play runs the clock'}</small></button>${o ? `<button class="ar-pc sm ${g.hurry ? 'on' : ''}" data-call="hurry"><b>⚡ Hurry-up: ${g.hurry ? 'ON' : 'off'}</b><small>Runs less clock</small></button>` : '<span></span>'}</div>`;
+      sh.className = 'ar-sheet on call full';
       sh.innerHTML = `<div class="ar-sitrow"><b>${g.twoPt ? 'TWO-POINT TRY' : o ? 'YOUR BALL' : 'THEIR BALL'}</b> · ${downText(g)} · ${spotText(g.f)}</div>${g.hint ? `<div class="ar-hl">💡 ${esc(g.hint)}</div>` : ''}${extra}<div class="ar-cards">${cards.join('')}</div>`;
+    } else if (g.phase === 'set' && g.waitHike && !S.demo) {
+      const run = g.play && OFF_PLAYS[g.play] && OFF_PLAYS[g.play].run, o = g.off === 'U';
+      const legend = !o ? 'After the snap, drag to chase the ball. TACKLE dives at the runner. SWITCH changes player.' : run ? 'After the snap, drag to run. SPRINT, JUKE and STIFF ARM appear on the right.' : 'After the snap you are the QB. Drag to move, tap a numbered button to throw. Green ring = open.';
+      sh.className = 'ar-sheet on hike';
+      sh.innerHTML = `<div class="ar-hk"><small>${legend}</small><button class="ar-go" data-a="hike">${o ? '🏈 HIKE!' : '🛡️ READY'}</button><button class="ar-link" data-a="backplays">← Change the play</button></div>`;
     } else if (g.phase === 'kick' && g.kickInfo) {
       const k = g.kickInfo;
       sh.className = `ar-sheet on kick ${k.c || ''}`; sh.innerHTML = `<div class="ar-kc"><i>${k.icon}</i><b>${esc(k.title)}</b>${k.sub ? `<em>${esc(k.sub)}</em>` : ''}<small>${esc(k.text)}</small></div>`;
@@ -159,7 +191,7 @@ export function openArcade({ onClose } = {}) {
       sh.className = 'ar-sheet on meter'; sh.innerHTML = `<div class="ar-mt"><b>FIELD GOAL · ${g.meter.dst} yds</b><div class="ar-bar"><i class="ar-zone"></i><i class="ar-mk"></i></div><button class="ar-go" data-a="kick">KICK!</button><small>Tap when the marker is in the middle</small></div>`;
     } else { sh.className = 'ar-sheet'; sh.innerHTML = ''; }
   }
-  function card(id, p, star) { return `<button class="ar-pc" data-call="${id}"><i>${p.ic}</i><b>${p.n}${star ? ' ★' : ''}</b><small>${p.d}</small></button>`; }
+  function card(id, p, star) { return `<button class="ar-pc dg" data-call="${id}">${diagram(id, !!DEF_CALLS[id])}<b>${p.n}${star ? ' ★' : ''}</b><small>${p.d}</small></button>`; }
   function updateMeter() { const mk = $('.ar-mk'); if (mk && S.g.meter) mk.style.left = `${S.g.meter.x * 100}%`; }
 
   /* ------------------------------------ buttons ------------------------------------ */
@@ -243,7 +275,10 @@ export function openArcade({ onClose } = {}) {
     const c = e.target.closest('[data-call]'); if (c && S.g) { if (c.disabled) return; const id = c.dataset.call; if (call(S.g, id)) { fx.tick(); if (OFF_PLAYS[id] || DEF_CALLS[id]) { if (S.mode !== 'drill') tipFor(S.g); } drawSheet(true); } return; }
     const a = e.target.closest('[data-a]'); if (!a) return;
     const k = a.dataset.a;
-    if (k === 'st' || k === 'bs' || k === 'lh') { S.rec.set[k] = k === 'lh' ? +a.dataset.v : a.dataset.v; store(S.rec); applySet(); modal(menuHtml()); }
+    if (k === 'hike') { if (S.g) S.g.in.hike = true; fx.tick(); }
+    else if (k === 'backplays') { if (S.g) uncall(S.g); drawSheet(true); }
+    else if (k === 'gs') { S.rec.set.gs = a.dataset.v; store(S.rec); modal(menuHtml()); }
+    else if (k === 'st' || k === 'bs' || k === 'lh') { S.rec.set[k] = k === 'lh' ? +a.dataset.v : a.dataset.v; store(S.rec); applySet(); modal(menuHtml()); }
     else if (k === 'resume') resumeSaved(); else if (k === 'practice') startDrill(0);
     else if (k === 'drillnext') startDrill(S.di + 1); else if (k === 'drillretry') startDrill(S.di);
     else if (k === 'season') { const se = season(); start(false, { opp: OPPONENTS[se.i % OPPONENTS.length], mode: 'season' }); }
@@ -435,7 +470,7 @@ export function openArcade({ onClose } = {}) {
       if (S.rp) {
         S.rp.acc += dt; S.rp.i = Math.floor(S.rp.acc * 20); if (!S.rclip || S.rp.i >= S.rclip.length) S.rp = null;
       } else {
-        S.acc += dt; let n = 0; const sp = S.demo ? 1.6 : 1;
+        S.acc += dt; let n = 0; const sp = S.demo ? 1.6 : S.rec.set.gs === 's' ? 0.8 : 1;
         while (S.acc >= 1 / 60 && n++ < 6) { step(g, (1 / 60) * sp); S.acc -= 1 / 60; }
         if (g.phase === 'live') {
           if (S.lastPhase !== 'live') { S.rbuf = []; S.rclip = null; S.sawTD = false; }
