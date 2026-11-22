@@ -73,14 +73,13 @@ export function openArcade({ onClose } = {}) {
   document.body.appendChild(root);
   const $ = (s) => root.querySelector(s), cv = $('.ar-cv'), ctx = cv.getContext('2d');
   const q = (k) => root.querySelector(`[data-k="${k}"]`);
-  // cw/ch are the *virtual* (portrait) size the field is drawn in; in landscape the canvas is rotated so the play runs left to right.
-  let cw = 0, ch = 0, rw = 0, rh = 0, dpr = 1, land = false;
+  // The field always runs up and down the screen. In landscape it sits centred with the controls in the side margins.
+  let cw = 0, ch = 0, dpr = 1, land = false;
   const resize = () => {
-    dpr = Math.min(2, window.devicePixelRatio || 1); rw = root.clientWidth; rh = root.clientHeight; land = rw > rh; cw = land ? rh : rw; ch = land ? rw : rh;
-    cv.width = Math.round(rw * dpr); cv.height = Math.round(rh * dpr); root.classList.toggle('land', land);
-    if (land) ctx.setTransform(0, dpr, -dpr, 0, rw * dpr, 0); else ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dpr = Math.min(2, window.devicePixelRatio || 1); cw = root.clientWidth; ch = root.clientHeight; land = cw > ch;
+    cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); root.classList.toggle('land', land); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
-  const label = (str, x, y, stroke) => { ctx.save(); ctx.translate(x, y); if (land) ctx.rotate(-Math.PI / 2); if (stroke) ctx.strokeText(str, 0, 0); ctx.fillText(str, 0, 0); ctx.restore(); };
+  const label = (str, x, y, stroke) => { ctx.save(); ctx.translate(x, y); if (stroke) ctx.strokeText(str, 0, 0); ctx.fillText(str, 0, 0); ctx.restore(); };
   resize(); window.addEventListener('resize', resize); window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 
   /* ---------------------------------- game control ---------------------------------- */
@@ -244,7 +243,7 @@ export function openArcade({ onClose } = {}) {
   sz.addEventListener('pointermove', (e) => {
     if (e.pointerId !== S.stick.id) return; e.preventDefault();
     let dx = e.clientX - S.stick.ox, dy = e.clientY - S.stick.oy; const m = Math.hypot(dx, dy) || 1, k = Math.min(1, m / R);
-    if (land) setStick((dy / m) * k, (dx / m) * k); else setStick((dx / m) * k, -(dy / m) * k);
+    setStick((dx / m) * k, -(dy / m) * k);
     const r = sz.getBoundingClientRect(), kx = S.stick.ox - r.left + (dx / m) * Math.min(m, R) - 22, ky = S.stick.oy - r.top + (dy / m) * Math.min(m, R) - 22;
     knob.style.left = `${kx}px`; knob.style.top = `${ky}px`;
   });
@@ -254,7 +253,7 @@ export function openArcade({ onClose } = {}) {
   // tap the field to throw to the nearest receiver
   cv.addEventListener('pointerdown', (e) => {
     const g = S.g; if (!g || S.view !== 'game' || S.demo || g.mode !== 'drop' || g.off !== 'U') return;
-    const r = cv.getBoundingClientRect(), rx = e.clientX - r.left, ry = e.clientY - r.top, px = land ? ry : rx, py = land ? rw - rx : ry, sc = scale();
+    const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top, sc = scale();
     let best = -1, bd = 5.5; targets(g).forEach((t, i) => { const d = Math.hypot((sx(t.x, sc) - px) / sc, (sy(t.y, sc) - py) / sc); if (d < bd) { bd = d; best = i; } });
     if (best >= 0) g.in.throw = best;
   });
@@ -267,7 +266,7 @@ export function openArcade({ onClose } = {}) {
     if (k === 'shift') g.in.sprint = true; keyStick();
   };
   const ku = (e) => { const k = e.key.toLowerCase(); S.keys[k] = false; if (k === 'shift' && S.g) S.g.in.sprint = false; keyStick(); };
-  function keyStick() { const g = S.g; if (!g || S.stick.id >= 0) return; const K = S.keys; const h = (K.d || K.arrowright ? 1 : 0) - (K.a || K.arrowleft ? 1 : 0), v = (K.w || K.arrowup ? 1 : 0) - (K.s || K.arrowdown ? 1 : 0); const x = land ? -v : h, y = land ? h : v, m = Math.hypot(x, y) || 1; g.in.mx = (x / m) * (x || y ? 1 : 0); g.in.my = (y / m) * (x || y ? 1 : 0); }
+  function keyStick() { const g = S.g; if (!g || S.stick.id >= 0) return; const K = S.keys; const x = (K.d || K.arrowright ? 1 : 0) - (K.a || K.arrowleft ? 1 : 0), y = (K.w || K.arrowup ? 1 : 0) - (K.s || K.arrowdown ? 1 : 0), m = Math.hypot(x, y) || 1; g.in.mx = (x / m) * (x || y ? 1 : 0); g.in.my = (y / m) * (x || y ? 1 : 0); }
   window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);
 
   /* --------------------------------- clicks (DOM) --------------------------------- */
@@ -334,7 +333,7 @@ export function openArcade({ onClose } = {}) {
   }
 
   /* ------------------------------------ drawing ------------------------------------ */
-  const scale = () => cw / 30;
+  const scale = () => (land ? ch / 36 : cw / 30);
   const sx = (x, sc) => cw / 2 + (x - S.camX) * sc;
   const sy = (y, sc) => ch * 0.6 - (y - S.camY) * sc;
   function camTarget(g) {
@@ -344,8 +343,8 @@ export function openArcade({ onClose } = {}) {
       else if (g.fl) { const f = clamp(g.fl.t / g.fl.dur, 0, 1); ty = g.fl.fy + (g.fl.ty - g.fl.fy) * f + 4; tx = g.fl.fx + (g.fl.tx - g.fl.fx) * f; }
       else if (g.pl.length) { const c = g.pl.reduce((a, p) => a + p.y, 0) / g.pl.length; ty = Math.max(g.los + 2, c); tx = S.camX; }
     }
-    if (g.phase === 'call' || g.phase === 'set') ty = land ? g.los + (g.phase === 'call' && !S.demo ? 0.2 : 0.05) * ch / scale() : g.los - (g.phase === 'call' && !S.demo ? 0.3 : 0.12) * ch / scale() + 1;
-    return { x: clamp(tx, 15, W - 15), y: clamp(ty, g.phase === 'call' ? 0 : 22, g.phase === 'call' || g.phase === 'set' ? LEN - 4 : LEN - 24) };
+    if (g.phase === 'call' || g.phase === 'set') ty = g.los - (g.phase === 'call' && !S.demo ? 0.3 : 0.12) * ch / scale() + 1;
+    return { x: land ? 18 : clamp(tx, 15, W - 15), y: clamp(ty, g.phase === 'call' ? 0 : 22, g.phase === 'call' || g.phase === 'set' ? LEN - 4 : LEN - 24) };
   }
   function shade(hex, f) { const n = parseInt(hex.slice(1), 16); let r = (n >> 16) & 255, gg = (n >> 8) & 255, b = n & 255; r = clamp(Math.round(r * f), 0, 255); gg = clamp(Math.round(gg * f), 0, 255); b = clamp(Math.round(b * f), 0, 255); return `rgb(${r},${gg},${b})`; }
 

@@ -466,3 +466,12 @@ html, body { overflow-x:hidden; }
 #arcade.land .ar-sheet.hike { left:25%; right:25%; }
 #arcade.hiking .ar-btns { display:none; }
 .ar-pc.dg .ar-dg { max-width:104px; }
+
+/* landscape: the field still runs up and down; stick and buttons live in the side margins */
+#arcade.land .ar-sz { width:34%; top:56px; }
+#arcade.land .ar-btns { max-width:30%; }
+#arcade.land .ar-btns.n6 { max-width:34%; }
+#arcade.land .ar-bn { top:calc(58px + env(safe-area-inset-top)); }
+#arcade.hiking .ar-tipbar { display:none; }
+#arcade.land .ar-sheet.hike { left:auto; right:calc(10px + env(safe-area-inset-right)); width:30%; top:auto; bottom:10px; padding:0; background:none; }
+#arcade.land .ar-hk small { font-size:.72rem; text-shadow:0 1px 3px #000; } #arcade.land .ar-hk .ar-go { font-size:1.15rem; padding:12px; }
