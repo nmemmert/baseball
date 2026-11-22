@@ -419,3 +419,34 @@ html, body { overflow-x:hidden; }
 .ar-how { text-align:left; } .ar-how h2 { margin:0 0 4px; text-align:center; } .ar-how h3 { margin:6px 0 0; font-size:.95rem; color:#ffd33d; } .ar-how p { margin:0; font-size:.88rem; color:#dbe6fb; line-height:1.4; }
 .ar-final { display:flex; align-items:center; justify-content:center; gap:10px; font-size:.9rem; } .ar-final b { font-size:2.3rem; } .ar-final span { max-width:28%; font-weight:700; }
 .ar-stats { width:100%; border-collapse:collapse; font-size:.85rem; } .ar-stats td, .ar-stats th { padding:5px 4px; border-bottom:1px solid rgba(255,255,255,.1); } .ar-stats td:first-child { text-align:left; color:#b3c4e4; }
+
+/* landscape: play runs left to right, controls on the sides, call sheet as a side panel */
+#arcade.land .ar-sz { width:44%; top:56px; height:auto; }
+#arcade.land .ar-btns { display:flex; flex-wrap:wrap; justify-content:flex-end; max-width:56%; gap:8px; right:calc(14px + env(safe-area-inset-right)); bottom:calc(10px + env(safe-area-inset-bottom)); }
+#arcade.land .ar-b, #arcade.land .ar-b.big, #arcade.land .ar-btns.n6 .ar-b { width:58px; height:58px; } #arcade.land .ar-b small { font-size:.5rem; } #arcade.land .ar-b span { font-size:1.35rem; }
+#arcade.land .ar-top { padding-left:calc(10px + env(safe-area-inset-left)); padding-right:calc(10px + env(safe-area-inset-right)); }
+#arcade.land .ar-sb { max-width:520px; }
+#arcade.land .ar-tipbar { top:calc(64px + env(safe-area-inset-top)); left:25%; right:25%; }
+#arcade.land .ar-bn { top:30%; }
+#arcade.land .ar-sheet.call { left:auto; width:54%; top:calc(56px + env(safe-area-inset-top)); bottom:0; overflow:auto; padding:6px calc(12px + env(safe-area-inset-right)) 8px 22px; background:linear-gradient(90deg,rgba(6,20,44,0),rgba(6,20,44,.94) 16%); }
+#arcade.land .ar-cards { gap:6px; } #arcade.land .ar-pc { min-height:48px; padding:6px 8px; } #arcade.land .ar-pc small { display:none; } #arcade.land .ar-pc i { font-size:1.3rem; }
+#arcade.land .ar-hl { font-size:.75rem; padding:3px 6px; margin-bottom:4px; } #arcade.land .ar-sitrow { margin-bottom:3px; }
+#arcade.land .ar-modal { align-items:start; }
+
+/* ---------- Gridiron v2 ---------- */
+.ar-bn { top:calc(64px + env(safe-area-inset-top)); } .ar-bn b { font-size:1.35rem; padding:5px 14px; } .ar-bn small { font-size:.8rem; }
+.ar-tipbar { top:calc(122px + env(safe-area-inset-top)); }
+#arcade.land .ar-bn { top:calc(58px + env(safe-area-inset-top)); } #arcade.land .ar-tipbar { top:calc(112px + env(safe-area-inset-top)); }
+.ar-who { position:absolute; left:12px; bottom:calc(12px + env(safe-area-inset-bottom)); z-index:4; display:none; padding:4px 10px; border-radius:999px; background:rgba(6,20,44,.82); border:1px solid #ffd33d; font-size:.78rem; font-weight:800; pointer-events:none; }
+.ar-who.on { display:block; } #arcade.lefty .ar-who { left:auto; right:12px; }
+.ar-rp { position:absolute; right:12px; top:calc(62px + env(safe-area-inset-top)); z-index:8; display:none; padding:9px 14px; border-radius:999px; background:#c1283c; border:2px solid #fff; font-weight:900; }
+.ar-rp.on { display:block; } .ar-rpb { position:absolute; left:50%; transform:translateX(-50%); top:calc(66px + env(safe-area-inset-top)); z-index:8; display:none; padding:7px 16px; border-radius:999px; background:rgba(193,40,60,.95); font-weight:900; letter-spacing:.05em; }
+.ar-rpb.on { display:block; } #arcade.rpl .ar-sheet, #arcade.rpl .ar-btns, #arcade.rpl .ar-bn, #arcade.rpl .ar-tipbar, #arcade.rpl .ar-sz { display:none !important; }
+#arcade.lefty .ar-sz { left:auto; right:0; } #arcade.lefty .ar-btns { right:auto; left:12px; justify-items:start; } #arcade.lefty.land .ar-btns { left:calc(14px + env(safe-area-inset-left)); right:auto; justify-content:flex-start; }
+#arcade.bs-s .ar-btns { transform:scale(.82); transform-origin:bottom right; } #arcade.bs-l .ar-btns { transform:scale(1.18); transform-origin:bottom right; }
+#arcade.lefty.bs-s .ar-btns { transform-origin:bottom left; } #arcade.lefty.bs-l .ar-btns { transform-origin:bottom left; }
+.ar-menu { max-height:none; } .ar-menu .ar-opt { gap:3px; } .ar-go small { display:block; font-weight:700; font-size:.72rem; opacity:.85; }
+.ar-pc.sm { min-height:40px; grid-template-columns:1fr; } .ar-pc.sm b { font-size:.8rem; } .ar-pc.sm small { font-size:.62rem; } .ar-pc:disabled { opacity:.45; } .ar-pc.on { background:#2b6cb0; border-color:#7fb4f5; }
+.ar-cards.pat { margin-top:12px; } #arcade.land .ar-pc.sm small { display:block; }
+.ar-rpb { white-space:nowrap; }
+.ar-cards.pat .ar-pc { grid-template-columns:1fr; justify-items:center; text-align:center; padding:12px 8px; } .ar-cards.pat .ar-pc i { grid-row:auto; font-size:1.8rem; } .ar-cards.pat .ar-pc b { font-size:1rem; }

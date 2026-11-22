@@ -53,6 +53,11 @@ export const fx = {
   out() { const c = ac(); if (c) tone(c, c.currentTime, 160, 90, 0.1, 0.2); buzz([8]); },
   tick() { const c = ac(); if (c) tone(c, c.currentTime, 900, 700, 0.04, 0.12, 'square'); buzz([6]); },
   win() { const c = ac(); if (c) { const t = c.currentTime; [523, 659, 784, 1047].forEach((f, i) => tone(c, t + i * 0.13, f, f, 0.3, 0.2, 'triangle')); noise(c, t + 0.3, 1.6, 'bandpass', 900, 0.6, 0.3, 0.4); } buzz([30, 80, 30, 80, 60]); },
+  whistle() { const c = ac(); if (c) { const t = c.currentTime; tone(c, t, 2900, 2750, 0.18, 0.12, 'square'); tone(c, t + 0.2, 2900, 2600, 0.22, 0.12, 'square'); } buzz([14]); },
+  thud() { const c = ac(); if (c) { const t = c.currentTime; noise(c, t, 0.12, 'lowpass', 500, 0.8, 0.7); tone(c, t, 120, 50, 0.16, 0.35); } buzz([18]); },
+  cheer() { const c = ac(); if (c) { const t = c.currentTime; noise(c, t, 1.8, 'bandpass', 1100, 0.5, 0.32, 0.5); tone(c, t, 196, 196, 0.5, 0.1, 'sawtooth'); tone(c, t + 0.05, 294, 294, 0.5, 0.08, 'sawtooth'); } buzz([25, 60, 25]); },
+  groan() { const c = ac(); if (c) { const t = c.currentTime; noise(c, t, 1.0, 'bandpass', 500, 0.6, 0.22, 0.2); tone(c, t, 220, 110, 0.8, 0.08, 'sawtooth'); } buzz([30]); },
+  crowd() { const c = ac(); if (c) noise(c, c.currentTime, 0.9, 'bandpass', 900, 0.5, 0.12, 0.35); },
   lose() { const c = ac(); if (c) { const t = c.currentTime; [392, 330, 262].forEach((f, i) => tone(c, t + i * 0.2, f, f * 0.98, 0.35, 0.18, 'triangle')); } buzz([40]); },
 };
 
