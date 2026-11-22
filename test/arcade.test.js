@@ -125,3 +125,21 @@ test('the play can be changed before the hike', () => {
   const g = newArcade({ seed: 6 }); assert.ok(call(g, 'run_in')); assert.equal(g.phase, 'set');
   assert.ok(uncall(g)); assert.equal(g.phase, 'call'); assert.ok(call(g, 'pass_deep')); assert.equal(g.play, 'pass_deep');
 });
+
+test('a passer who picks open receivers completes most throws, even with the stick held', () => {
+  let att = 0, comp = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    const g = newArcade({ seed }); g.f = 30; g.firstAt = 40; call(g, 'pass_quick'); g.in.hike = true; step(g, 1 / 60);
+    let n = 0, threw = false;
+    while (g.phase !== 'dead' && g.phase !== 'kick' && n++ < 4000) {
+      if (g.phase === 'live' && g.mode === 'drop' && !threw && g.t > 1.1) {
+        let best = -1, bs = -1; targets(g).forEach((r, i) => { const sc = (g.open[r.id] ?? 0) * 10 + Math.min(r.y - g.los, 15) * 0.3; if (sc > bs) { bs = sc; best = i; } });
+        if (best >= 0) { g.in.throw = best; threw = true; att++; }
+      }
+      if (threw) g.in.my = 1;
+      step(g, 1 / 60);
+    }
+    if (threw && g.stat.U.comp > 0) comp++;
+  }
+  assert.ok(att > 40 && comp / att > 0.5, `${comp}/${att}`);
+});

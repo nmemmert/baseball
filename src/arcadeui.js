@@ -63,7 +63,7 @@ export function openArcade({ onClose } = {}) {
     sig: '', bsig: '', ssig: '', raf: 0, last: 0, acc: 0, keys: {}, stick: { id: -1, ox: 0, oy: 0 }, tip: 0, held: {}, endSaved: false,
     mode: 'quick', oppIdx: 0, rbuf: [], rclip: null, rp: null, rtick: 0, lastPhase: '', drillDone: false, sawTD: false, f0: 0,
   };
-  S.rec.set = Object.assign({ lv: 1, ql: 240, st: 'm', bs: 'm', lh: 0, gs: 's', vw: 'f' }, S.rec.set || {}); S.rec.tips = S.rec.tips || {};
+  S.rec.set = Object.assign({ lv: 1, ql: 240, st: 'm', bs: 'm', lh: 0, gs: 's', vm: 'w' }, S.rec.set || {}); S.rec.tips = S.rec.tips || {};
   const root = document.createElement('div'); root.id = 'arcade';
   root.innerHTML = `<canvas class="ar-cv"></canvas>
     <div class="ar-top"><div class="ar-sb"><span class="ar-tm" data-k="u"></span><b class="ar-sc" data-k="us">0</b><span class="ar-mid"><i data-k="q"></i><em data-k="sit"></em></span><b class="ar-sc" data-k="cs">0</b><span class="ar-tm" data-k="c"></span></div><button class="ar-x" data-a="pause" aria-label="Pause">❚❚</button></div>
@@ -133,7 +133,7 @@ export function openArcade({ onClose } = {}) {
       <div class="ar-opt"><span>Difficulty</span>${seg('lv', s.lv, LEVELS.map((l) => [l.name, l.id]))}</div>
       <div class="ar-opt"><span>Game length</span>${seg('ql', s.ql, QLEN.map(([n, v]) => [n, v]))}</div>
       <div class="ar-opt"><span>Game speed</span>${seg('gs', s.gs, [['Slower (easier)', 's'], ['Normal', 'n']])}</div>
-      <div class="ar-opt"><span>Landscape view</span>${seg('vw', s.vw, [['Fill the screen', 'f'], ['Wide (see more)', 'w']])}</div>
+      <div class="ar-opt"><span>Landscape view</span>${seg('vm', s.vm, [['Wide (see more)', 'w'], ['Zoomed in', 'f']])}</div>
       <div class="ar-opt"><span>Stick size</span>${seg('st', s.st, [['Small', 's'], ['Medium', 'm'], ['Large', 'l']])}</div>
       <div class="ar-opt"><span>Button size</span>${seg('bs', s.bs, [['Small', 's'], ['Medium', 'm'], ['Large', 'l']])}</div>
       <div class="ar-opt"><span>Hand</span>${seg('lh', s.lh, [['Right-handed', 0], ['Left-handed', 1]])}</div>
@@ -277,7 +277,7 @@ export function openArcade({ onClose } = {}) {
     const k = a.dataset.a;
     if (k === 'hike') { if (S.g) S.g.in.hike = true; fx.tick(); }
     else if (k === 'backplays') { if (S.g) uncall(S.g); drawSheet(true); }
-    else if (k === 'vw') { S.rec.set.vw = a.dataset.v; store(S.rec); modal(menuHtml()); }
+    else if (k === 'vm') { S.rec.set.vm = a.dataset.v; store(S.rec); modal(menuHtml()); }
     else if (k === 'gs') { S.rec.set.gs = a.dataset.v; store(S.rec); modal(menuHtml()); }
     else if (k === 'st' || k === 'bs' || k === 'lh') { S.rec.set[k] = k === 'lh' ? +a.dataset.v : a.dataset.v; store(S.rec); applySet(); modal(menuHtml()); }
     else if (k === 'resume') resumeSaved(); else if (k === 'practice') startDrill(0);
@@ -335,7 +335,7 @@ export function openArcade({ onClose } = {}) {
   }
 
   /* ------------------------------------ drawing ------------------------------------ */
-  const fill = () => land && S.rec.set.vw !== 'w';
+  const fill = () => land && S.rec.set.vm === 'f';
   const scale = () => (land ? (fill() ? cw / (W + 2) : ch / 36) : cw / 30);
   const anchor = () => (fill() ? 0.7 : 0.6);
   const sx = (x, sc) => cw / 2 + (x - S.camX) * sc;
@@ -358,6 +358,7 @@ export function openArcade({ onClose } = {}) {
     const x0 = sx(0, sc), x1 = sx(W, sc);
     for (let y = Math.floor(bot / 5) * 5; y < top; y += 5) {
       const a = sy(y + 5, sc), b = sy(y, sc), y0 = Math.max(0, y);
+      ctx.fillStyle = (Math.floor(y / 5) & 1) ? '#1a5a35' : '#1d6139'; ctx.fillRect(0, a, cw, b - a + 1);
       if (y0 >= LEN) continue; ctx.fillStyle = (Math.floor(y / 5) & 1) ? '#1f7a3f' : '#237f43'; ctx.fillRect(x0, a, x1 - x0, b - a + 1);
     }
     // end zones
@@ -373,7 +374,7 @@ export function openArcade({ onClose } = {}) {
     ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1;
     for (let y = Math.ceil(EZ); y <= GOAL; y++) { if (y > top || y < bot || y % 5 === 0) continue; const yy = sy(y, sc); ctx.beginPath(); ctx.moveTo(sx(17, sc), yy); ctx.lineTo(sx(19, sc), yy); ctx.moveTo(x0, yy); ctx.lineTo(x0 + sc * 0.6, yy); ctx.moveTo(x1 - sc * 0.6, yy); ctx.lineTo(x1, yy); ctx.stroke(); }
     // sidelines + out of bounds
-    ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 0, x0, ch); ctx.fillRect(x1, 0, cw - x1, ch);
+    ctx.fillStyle = 'rgba(0,0,0,.16)'; ctx.fillRect(0, 0, x0, ch); ctx.fillRect(x1, 0, cw - x1, ch);
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0, ch); ctx.moveTo(x1, 0); ctx.lineTo(x1, ch); ctx.stroke();
     // LOS and first-down line
     if (g.pl.length) {
